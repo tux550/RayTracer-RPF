@@ -48,53 +48,61 @@ namespace pbrt {
     
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        BasicRGB n0MagSum = {0, 0, 0};
-        BasicRGB n1MagSum = {0, 0, 0};
-        BasicRGB p0MagSum = {0, 0, 0};
-        BasicRGB p1MagSum = {0, 0, 0};
-        BasicRGB filmPosSum = {0, 0, 0};
-        BasicRGB lensPosSum = {0, 0, 0};
-        
-
         for (const SampleData &sd : fvMat[i][j]) {
-          filmPosSum.r += sd.pFilm.x;
-          filmPosSum.g += sd.pFilm.y;
-          lensPosSum.r += sd.pLens.x;
-          lensPosSum.g += sd.pLens.y;
-          
-          n0MagSum.r += sd.fv.n0.x;
-          n0MagSum.g += sd.fv.n0.y;
-          n0MagSum.b += sd.fv.n0.z;
-          n1MagSum.r += sd.fv.n1.x;
-          n1MagSum.g += sd.fv.n1.y;
-          n1MagSum.b += sd.fv.n1.z;
-          p0MagSum.r += sd.fv.p0.x;
-          p0MagSum.g += sd.fv.p0.y;
-          p0MagSum.b += sd.fv.p0.z;
-          p1MagSum.r += sd.fv.p1.x;
-          p1MagSum.g += sd.fv.p1.y;
-          p1MagSum.b += sd.fv.p1.z;
+          n0Mag[i][j] = n0Mag[i][j] + BasicRGB(sd.fv.n0.x, sd.fv.n0.y, sd.fv.n0.z);
+          n1Mag[i][j] = n1Mag[i][j] + BasicRGB(sd.fv.n1.x, sd.fv.n1.y, sd.fv.n1.z);
+          p0Mag[i][j] = p0Mag[i][j] + BasicRGB(sd.fv.p0.x, sd.fv.p0.y, sd.fv.p0.z);
+          p1Mag[i][j] = p1Mag[i][j] + BasicRGB(sd.fv.p1.x, sd.fv.p1.y, sd.fv.p1.z);
+          filmPos[i][j] = filmPos[i][j] + BasicRGB(sd.pFilm.x, sd.pFilm.y, 0);
+          lensPos[i][j] = lensPos[i][j] + BasicRGB(sd.pLens.x, sd.pLens.y, 0);
         }
-        n0Mag[i][j].r = n0MagSum.r / fvMat[i][j].size();
-        n0Mag[i][j].g = n0MagSum.g / fvMat[i][j].size();
-        n0Mag[i][j].b = n0MagSum.b / fvMat[i][j].size();
-        n1Mag[i][j].r = n1MagSum.r / fvMat[i][j].size();
-        n1Mag[i][j].g = n1MagSum.g / fvMat[i][j].size();
-        n1Mag[i][j].b = n1MagSum.b / fvMat[i][j].size();
-        p0Mag[i][j].r = p0MagSum.r / fvMat[i][j].size();
-        p0Mag[i][j].g = p0MagSum.g / fvMat[i][j].size();
-        p0Mag[i][j].b = p0MagSum.b / fvMat[i][j].size();
-        p1Mag[i][j].r = p1MagSum.r / fvMat[i][j].size();
-        p1Mag[i][j].g = p1MagSum.g / fvMat[i][j].size();
-        p1Mag[i][j].b = p1MagSum.b / fvMat[i][j].size();
-
-        filmPos[i][j].r = filmPosSum.r / fvMat[i][j].size();
-        filmPos[i][j].g = filmPosSum.g / fvMat[i][j].size();
-        lensPos[i][j].r = lensPosSum.r / fvMat[i][j].size();
-        lensPos[i][j].g = lensPosSum.g / fvMat[i][j].size();
-
+        n0Mag[i][j] = n0Mag[i][j] / fvMat[i][j].size();
+        n1Mag[i][j] = n1Mag[i][j] / fvMat[i][j].size();
+        p0Mag[i][j] = p0Mag[i][j] / fvMat[i][j].size();
+        p1Mag[i][j] = p1Mag[i][j] / fvMat[i][j].size();
+        filmPos[i][j] = filmPos[i][j] / fvMat[i][j].size();
+        lensPos[i][j] = lensPos[i][j] / fvMat[i][j].size();
       }
     }
+    // Normalize
+    BasicRGB maxN0 = {0, 0, 0};
+    BasicRGB maxN1 = {0, 0, 0};
+    BasicRGB maxP0 = {0, 0, 0};
+    BasicRGB maxP1 = {0, 0, 0};
+    BasicRGB maxFilmPos = {0, 0, 0};
+    BasicRGB maxLensPos = {0, 0, 0};
+
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        maxN0.r = std::max(maxN0.r, n0Mag[i][j].r);
+        maxN0.g = std::max(maxN0.g, n0Mag[i][j].g);
+        maxN0.b = std::max(maxN0.b, n0Mag[i][j].b);
+        maxN1.r = std::max(maxN1.r, n1Mag[i][j].r);
+        maxN1.g = std::max(maxN1.g, n1Mag[i][j].g);
+        maxN1.b = std::max(maxN1.b, n1Mag[i][j].b);
+        maxP0.r = std::max(maxP0.r, p0Mag[i][j].r);
+        maxP0.g = std::max(maxP0.g, p0Mag[i][j].g);
+        maxP0.b = std::max(maxP0.b, p0Mag[i][j].b);
+        maxP1.r = std::max(maxP1.r, p1Mag[i][j].r);
+        maxP1.g = std::max(maxP1.g, p1Mag[i][j].g);
+        maxP1.b = std::max(maxP1.b, p1Mag[i][j].b);
+        maxFilmPos.r = std::max(maxFilmPos.r, filmPos[i][j].r);
+        maxFilmPos.g = std::max(maxFilmPos.g, filmPos[i][j].g);
+        maxLensPos.r = std::max(maxLensPos.r, lensPos[i][j].r);
+        maxLensPos.g = std::max(maxLensPos.g, lensPos[i][j].g);
+      }
+    }
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        n0Mag[i][j] = (n0Mag[i][j] / maxN0) * 255;
+        n1Mag[i][j] = (n1Mag[i][j] / maxN1) * 255;
+        p0Mag[i][j] = (p0Mag[i][j] / maxP0) * 255;
+        p1Mag[i][j] = (p1Mag[i][j] / maxP1) * 255;
+        filmPos[i][j] = (filmPos[i][j] / maxFilmPos) * 255;
+        lensPos[i][j] = (lensPos[i][j] / maxLensPos) * 255;
+      }
+    }
+
     // Write to file
     Imf::Rgba* filmPosPixels = new Imf::Rgba[nCols * nRows];
     Imf::Rgba* lensPosPixels = new Imf::Rgba[nCols * nRows];

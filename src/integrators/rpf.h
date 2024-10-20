@@ -25,6 +25,28 @@ struct BasicRGB {
   double g;
   double b;
   BasicRGB(double r, double g, double b): r(r), g(g), b(b) {};
+
+  // + operator
+  BasicRGB operator+(const BasicRGB &other) const {
+    return BasicRGB(r + other.r, g + other.g, b + other.b);
+  }
+  // / operator for double
+  BasicRGB operator/(double scalar) const {
+    return BasicRGB(r / scalar, g / scalar, b / scalar);
+  }
+  // / operator for BasicRGB
+  BasicRGB operator/(const BasicRGB &other) const {
+    return BasicRGB(r / other.r, g / other.g, b / other.b);
+  }
+  // * operator for double
+  BasicRGB operator*(double scalar) const {
+    return BasicRGB(r * scalar, g * scalar, b * scalar);
+  }
+  // * operator for BasicRGB
+  BasicRGB operator*(const BasicRGB &other) const {
+    return BasicRGB(r * other.r, g * other.g, b * other.b);
+  }
+
 };
 
 struct FeatureVector {
