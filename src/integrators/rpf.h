@@ -36,7 +36,10 @@ struct BasicRGB {
   }
   // / operator for BasicRGB
   BasicRGB operator/(const BasicRGB &other) const {
-    return BasicRGB(r / other.r, g / other.g, b / other.b);
+    double nr = other.r == 0 ? 0 : r / other.r;
+    double ng = other.g == 0 ? 0 : g / other.g;
+    double nb = other.b == 0 ? 0 : b / other.b;
+    return BasicRGB(nr, ng, nb);
   }
   // * operator for double
   BasicRGB operator*(double scalar) const {
@@ -79,8 +82,9 @@ struct SampleData {
   FeatureVector fv;
 
   // CONSTRUCTOR
-  SampleData(const Point2f &pFilm, const Spectrum &L, Float rayWeight, const FeatureVector &fv):
+  SampleData(const Point2f &pFilm, const Point2f &pLens, const Spectrum &L, Float rayWeight, const FeatureVector &fv):
     pFilm(pFilm),
+    pLens(pLens),
     L(L),
     rayWeight(rayWeight),
     fv(fv)

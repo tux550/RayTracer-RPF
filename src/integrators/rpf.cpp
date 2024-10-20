@@ -94,12 +94,12 @@ namespace pbrt {
     }
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        n0Mag[i][j] = (n0Mag[i][j] / maxN0) * 255;
-        n1Mag[i][j] = (n1Mag[i][j] / maxN1) * 255;
-        p0Mag[i][j] = (p0Mag[i][j] / maxP0) * 255;
-        p1Mag[i][j] = (p1Mag[i][j] / maxP1) * 255;
-        filmPos[i][j] = (filmPos[i][j] / maxFilmPos) * 255;
-        lensPos[i][j] = (lensPos[i][j] / maxLensPos) * 255;
+        n0Mag[i][j] = (n0Mag[i][j] / maxN0);
+        n1Mag[i][j] = (n1Mag[i][j] / maxN1);
+        p0Mag[i][j] = (p0Mag[i][j] / maxP0);
+        p1Mag[i][j] = (p1Mag[i][j] / maxP1);
+        filmPos[i][j] = (filmPos[i][j] / maxFilmPos);
+        lensPos[i][j] = (lensPos[i][j] / maxLensPos);
       }
     }
 
@@ -219,6 +219,7 @@ namespace pbrt {
           // Save sample data
           SampleData sd(
             cameraSample.pFilm,
+            cameraSample.pLens,
             L,
             rayWeight,
             fv
@@ -235,13 +236,33 @@ namespace pbrt {
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
     // Add camera ray's contribution to image
+    double numSamples = 0;
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sd : samples[x][y]) {
           filmTile->AddSample(sd.pFilm, sd.L, sd.rayWeight);
         }
+        numSamples += samples[x][y].size();
       }
     }
+    // Sample index
+    size_t sx = samples.size() / 2;
+    size_t sy = samples[0].size() / 2;
+    // COUT number of samples
+    numSamples /= (sampleExtent.x * sampleExtent.y);
+    std::cout << "Average number of samples per pixel: " << numSamples << std::endl;
+    // COUT the filmPoistion and lensPosition of the first pixel
+    std::cout << "Film Position of the first pixel: ";
+    for (const SampleData &sd : samples[sx][sy]) {
+      std::cout << sd.pFilm << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "Lens Position of the first pixel: ";
+    for (const SampleData &sd : samples[sx][sy]) {
+      std::cout << sd.pLens << " ";
+    }
+    std::cout << std::endl;
+
     // Merge image tile into _Film_
     camera->film->MergeFilmTile(std::move(filmTile));
     LOG(INFO) << "Rendering finished";
