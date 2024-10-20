@@ -19,6 +19,130 @@ namespace pbrt {
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
+  void writeFVMat(const std::vector<std::vector<
+ std::vector<SampleData>>> &fvMat, const std::string &filename) {
+    // Remove any extension from filename
+    std::string base_filename = filename;
+    std::string::size_type idx = base_filename.rfind('.');
+    if (idx != std::string::npos) {
+      base_filename = base_filename.substr(0, idx);
+    }
+
+    std::string filmPosFilename = base_filename + "_Film_Position.exr";
+    std::string lensPosFilename = base_filename + "_Lens_Position.exr";
+    std::string n0filename = base_filename + "_I0_Normal.exr";
+    std::string n1filename = base_filename + "_I1_Normal.exr";
+    std::string p0filename = base_filename + "_I0_Position.exr";
+    std::string p1filename = base_filename + "_I1_Position.exr";
+
+    size_t nRows = fvMat.size();
+    size_t nCols = fvMat[0].size();
+    // Calculate magnitude of normal vectors and position vectors
+    std::vector<std::vector<BasicRGB>> n0Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    std::vector<std::vector<BasicRGB>> n1Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    std::vector<std::vector<BasicRGB>> p0Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    std::vector<std::vector<BasicRGB>> p1Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    // Calculate Film and Lens position
+    std::vector<std::vector<BasicRGB>> filmPos(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    std::vector<std::vector<BasicRGB>> lensPos(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        BasicRGB n0MagSum = {0, 0, 0};
+        BasicRGB n1MagSum = {0, 0, 0};
+        BasicRGB p0MagSum = {0, 0, 0};
+        BasicRGB p1MagSum = {0, 0, 0};
+        BasicRGB filmPosSum = {0, 0, 0};
+        BasicRGB lensPosSum = {0, 0, 0};
+        
+
+        for (const SampleData &sd : fvMat[i][j]) {
+          filmPosSum.r += sd.pFilm.x;
+          filmPosSum.g += sd.pFilm.y;
+          lensPosSum.r += sd.pLens.x;
+          lensPosSum.g += sd.pLens.y;
+          
+          n0MagSum.r += sd.fv.n0.x;
+          n0MagSum.g += sd.fv.n0.y;
+          n0MagSum.b += sd.fv.n0.z;
+          n1MagSum.r += sd.fv.n1.x;
+          n1MagSum.g += sd.fv.n1.y;
+          n1MagSum.b += sd.fv.n1.z;
+          p0MagSum.r += sd.fv.p0.x;
+          p0MagSum.g += sd.fv.p0.y;
+          p0MagSum.b += sd.fv.p0.z;
+          p1MagSum.r += sd.fv.p1.x;
+          p1MagSum.g += sd.fv.p1.y;
+          p1MagSum.b += sd.fv.p1.z;
+        }
+        n0Mag[i][j].r = n0MagSum.r / fvMat[i][j].size();
+        n0Mag[i][j].g = n0MagSum.g / fvMat[i][j].size();
+        n0Mag[i][j].b = n0MagSum.b / fvMat[i][j].size();
+        n1Mag[i][j].r = n1MagSum.r / fvMat[i][j].size();
+        n1Mag[i][j].g = n1MagSum.g / fvMat[i][j].size();
+        n1Mag[i][j].b = n1MagSum.b / fvMat[i][j].size();
+        p0Mag[i][j].r = p0MagSum.r / fvMat[i][j].size();
+        p0Mag[i][j].g = p0MagSum.g / fvMat[i][j].size();
+        p0Mag[i][j].b = p0MagSum.b / fvMat[i][j].size();
+        p1Mag[i][j].r = p1MagSum.r / fvMat[i][j].size();
+        p1Mag[i][j].g = p1MagSum.g / fvMat[i][j].size();
+        p1Mag[i][j].b = p1MagSum.b / fvMat[i][j].size();
+
+        filmPos[i][j].r = filmPosSum.r / fvMat[i][j].size();
+        filmPos[i][j].g = filmPosSum.g / fvMat[i][j].size();
+        lensPos[i][j].r = lensPosSum.r / fvMat[i][j].size();
+        lensPos[i][j].g = lensPosSum.g / fvMat[i][j].size();
+
+      }
+    }
+    // Write to file
+    Imf::Rgba* filmPosPixels = new Imf::Rgba[nCols * nRows];
+    Imf::Rgba* lensPosPixels = new Imf::Rgba[nCols * nRows];
+    Imf::Rgba* n0pixels = new Imf::Rgba[nCols * nRows];
+    Imf::Rgba* n1pixels = new Imf::Rgba[nCols * nRows];
+    Imf::Rgba* p0pixels = new Imf::Rgba[nCols * nRows];
+    Imf::Rgba* p1pixels = new Imf::Rgba[nCols * nRows];
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        n0pixels[j * nRows + i] = Imf::Rgba(n0Mag[i][j].r, n0Mag[i][j].g, n0Mag[i][j].b, 1);
+        n1pixels[j * nRows + i] = Imf::Rgba(n1Mag[i][j].r, n1Mag[i][j].g, n1Mag[i][j].b, 1);
+        p0pixels[j * nRows + i] = Imf::Rgba(p0Mag[i][j].r, p0Mag[i][j].g, p0Mag[i][j].b, 1);
+        p1pixels[j * nRows + i] = Imf::Rgba(p1Mag[i][j].r, p1Mag[i][j].g, p1Mag[i][j].b, 1);
+        // Film and Lens position
+        filmPosPixels[j * nRows + i] = Imf::Rgba(filmPos[i][j].r, filmPos[i][j].g, 0, 1);
+        lensPosPixels[j * nRows + i] = Imf::Rgba(lensPos[i][j].r, lensPos[i][j].g, 0, 1);
+
+      }
+    }
+    Imf::RgbaOutputFile n0file(n0filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    n0file.setFrameBuffer(n0pixels, 1, nCols);
+    n0file.writePixels(nRows);
+    Imf::RgbaOutputFile n1file(n1filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    n1file.setFrameBuffer(n1pixels, 1, nCols);
+    n1file.writePixels(nRows);
+    Imf::RgbaOutputFile p0file(p0filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    p0file.setFrameBuffer(p0pixels, 1, nCols);
+    p0file.writePixels(nRows);
+    Imf::RgbaOutputFile p1file(p1filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    p1file.setFrameBuffer(p1pixels, 1, nCols);
+    p1file.writePixels(nRows);
+    // Film and Lens position
+    Imf::RgbaOutputFile filmPosFile(filmPosFilename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    filmPosFile.setFrameBuffer(filmPosPixels, 1, nCols);
+    filmPosFile.writePixels(nRows);
+    Imf::RgbaOutputFile lensPosFile(lensPosFilename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
+    lensPosFile.setFrameBuffer(lensPosPixels, 1, nCols);
+    lensPosFile.writePixels(nRows);
+
+    delete[] filmPosPixels;
+    delete[] lensPosPixels;
+
+    delete[] p0pixels;
+    delete[] p1pixels;
+    delete[] n0pixels;
+    delete[] n1pixels;
+  }
+
   RPFIntegrator::RPFIntegrator(
     int maxDepth,
     std::shared_ptr<const Camera> camera,
@@ -52,7 +176,6 @@ namespace pbrt {
       )
     );
     { 
-
       // Allocate _MemoryArena_
       MemoryArena arena;
       // Compute sample bounds for tile
@@ -99,6 +222,8 @@ namespace pbrt {
       }
     }
     LOG(INFO) << "Finished sampling pixels" << sampleBounds;
+    // Write FeatureVector data to file
+    writeFVMat(samples, camera->film->filename);
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
     // Add camera ray's contribution to image

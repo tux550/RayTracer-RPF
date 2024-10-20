@@ -7,6 +7,8 @@
 #define PBRT_INTEGRATORS_RPF_PATH_H
 
 // integrators/rpf.h*
+#include <ImfRgbaFile.h>
+#include <ImfArray.h>
 #include <vector>
 #include "pbrt.h"
 #include "integrator.h"
@@ -15,7 +17,16 @@
 #include "lightdistrib.h"
 
 
+
 namespace pbrt {
+
+struct BasicRGB {
+  double r;
+  double g;
+  double b;
+  BasicRGB(double r, double g, double b): r(r), g(g), b(b) {};
+};
+
 struct FeatureVector {
   // FIRST INTERSECTION
   Normal3f n0; // Normal
@@ -34,9 +45,13 @@ struct FeatureVector {
   {};
 };
 
+void writeFVMat(const std::vector<std::vector<
+ std::vector<FeatureVector>>> &fvMat, const std::string &filename);
+
 struct SampleData {
   // SampleData Public Data
   Point2f pFilm;
+  Point2f pLens;
   Spectrum L;
   Float rayWeight;
   FeatureVector fv;
