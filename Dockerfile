@@ -1,4 +1,4 @@
-FROM ubuntu:18.10
+FROM ubuntu:22.04
 MAINTAINER Amit Bakshi <ambakshi@gmail.com>
 
 ENV DEBIAN_FRONTEND=noninteractive

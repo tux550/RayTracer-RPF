@@ -1,0 +1,1 @@
+Create a variant of Integrator: path that keeps track of the samples features (screen position, rp, world position, surface normal, texture value, sample color)
