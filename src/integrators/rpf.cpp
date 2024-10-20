@@ -15,6 +15,7 @@
 #include "lightdistrib.h"
 
 namespace pbrt {
+  STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
@@ -39,7 +40,6 @@ namespace pbrt {
 
   // Render
   void RPFIntegrator::Render(const Scene &scene) {  
-    /*
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
     ProgressReporter reporter(sampleExtent.x*sampleExtent.y, "Rendering");
@@ -86,28 +86,33 @@ namespace pbrt {
             L = Li(ray, scene, *sampler, arena, fv);
           }
           // Save sample data
-          SampleData sd;
-          sd.pFilm = cameraSample.pFilm;
-          sd.L = L;
-          sd.rayWeight = rayWeight;
-          sd.fv = fv;
+          SampleData sd(
+            cameraSample.pFilm,
+            L,
+            rayWeight,
+            fv
+          );
           samples[pixel.x][pixel.y].push_back(sd);
           // Free _MemoryArena_ memory from computing image sample value
           arena.Reset();
-        } while (tileSampler->StartNextSample());        
+        } while (sampler->StartNextSample());        
       }
     }
     LOG(INFO) << "Finished sampling pixels" << sampleBounds;
+    // Get filmTile
+    std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
     // Add camera ray's contribution to image
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sd : samples[x][y]) {
-          camera->film->AddSample(sd.pFilm, sd.L, sd.rayWeight);
+          filmTile->AddSample(sd.pFilm, sd.L, sd.rayWeight);
         }
       }
     }
+    // Merge image tile into _Film_
+    camera->film->MergeFilmTile(std::move(filmTile));
     LOG(INFO) << "Rendering finished";
-    */
+
     // Save final image after rendering
     camera->film->WriteImage();
   }
@@ -122,7 +127,7 @@ namespace pbrt {
 
     ProfilePhase p(Prof::SamplerIntegratorLi);
     Spectrum L(0.f), beta(1.f);
-    /*    
+ 
     RayDifferential ray(r);
     bool specularBounce = false;
     int bounces;
@@ -241,7 +246,7 @@ namespace pbrt {
       }
   }
   ReportValue(pathLength, bounces);
-  */
+
   return L;
 }
 

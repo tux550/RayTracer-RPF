@@ -12,7 +12,8 @@ RUN apt-get update -yq && apt-get install -yq \
 ADD . /app
 WORKDIR /app/build
 RUN cmake -G 'Unix Makefiles' ..
-RUN /usr/bin/make -j8  > ../build.log 2> ../build.err
+RUN /usr/bin/make -j8 
+# > ../build.log 2> ../build.err
 # Disable for debuggingq
 #RUN ./pbrt_test
 
