@@ -243,7 +243,19 @@ namespace pbrt {
     writeSFMat(samples, camera->film->filename);
 
 
-    // For each pixel, gather 
+    // PREPROCESSING THE SAMPLES
+    // 1. Clustering
+    // 2. Normalization
+
+    // STATISTICAL DEPENDENCY ESTIMATION
+    // 1. joint mutual information for each feature and random parameter
+    // 2. calculate filter weights alpha and beta for each feature
+    // 3. calculate mutual information
+
+    // FILTERING THE SAMPLES
+
+
+
 
 
 
@@ -270,20 +282,6 @@ namespace pbrt {
     // Sample index
     size_t sx = samples.size() / 2;
     size_t sy = samples[0].size() / 2;
-    // COUT number of samples
-    numSamples /= (sampleExtent.x * sampleExtent.y);
-    std::cout << "Average number of samples per pixel: " << numSamples << std::endl;
-    // COUT the filmPoistion and lensPosition of the first pixel
-    std::cout << "Film Position of the first pixel: ";
-    for (const SampleFeatures &sf : samples[sx][sy]) {
-      std::cout << sf.pFilm << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "Lens Position of the first pixel: ";
-    for (const SampleFeatures &sf : samples[sx][sy]) {
-      std::cout << sf.pLens << " ";
-    }
-    std::cout << std::endl;
 
     // Merge image tile into _Film_
     camera->film->MergeFilmTile(std::move(filmTile));
