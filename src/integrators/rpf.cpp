@@ -19,8 +19,17 @@ namespace pbrt {
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
-  void writeFVMat(const std::vector<std::vector<
- std::vector<SampleData>>> &fvMat, const std::string &filename) {
+  std::vector<std::vector<BasicRGB>> createBasicRGBMatrix(
+    size_t nRows,
+    size_t nCols
+  ) {
+    return std::vector<std::vector<BasicRGB>>(
+      nRows,
+      std::vector<BasicRGB>(nCols, {0, 0, 0})
+    );
+  }
+
+  void writeSFMat(const std::vector<std::vector<std::vector<SampleFeatures>>>  &sfMat, const std::string &filename) {
     // Remove any extension from filename
     std::string base_filename = filename;
     std::string::size_type idx = base_filename.rfind('.');
@@ -35,33 +44,32 @@ namespace pbrt {
     std::string p0filename = base_filename + "_I0_Position.exr";
     std::string p1filename = base_filename + "_I1_Position.exr";
 
-    size_t nRows = fvMat.size();
-    size_t nCols = fvMat[0].size();
+    size_t nRows = sfMat.size();
+    size_t nCols = sfMat[0].size();
     // Calculate magnitude of normal vectors and position vectors
-    std::vector<std::vector<BasicRGB>> n0Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
-    std::vector<std::vector<BasicRGB>> n1Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
-    std::vector<std::vector<BasicRGB>> p0Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
-    std::vector<std::vector<BasicRGB>> p1Mag(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
-    // Calculate Film and Lens position
-    std::vector<std::vector<BasicRGB>> filmPos(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
-    std::vector<std::vector<BasicRGB>> lensPos(nRows, std::vector<BasicRGB>(nCols, {0,0,0}));
+    auto n0Mat = createBasicRGBMatrix(nRows, nCols);
+    auto n1Mat = createBasicRGBMatrix(nRows, nCols);
+    auto p0Mat = createBasicRGBMatrix(nRows, nCols);
+    auto p1Mat = createBasicRGBMatrix(nRows, nCols);
+    auto filmPosMat = createBasicRGBMatrix(nRows, nCols);
+    auto lensPosMat = createBasicRGBMatrix(nRows, nCols);
     
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        for (const SampleData &sd : fvMat[i][j]) {
-          n0Mag[i][j] = n0Mag[i][j] + BasicRGB(sd.fv.n0.x, sd.fv.n0.y, sd.fv.n0.z);
-          n1Mag[i][j] = n1Mag[i][j] + BasicRGB(sd.fv.n1.x, sd.fv.n1.y, sd.fv.n1.z);
-          p0Mag[i][j] = p0Mag[i][j] + BasicRGB(sd.fv.p0.x, sd.fv.p0.y, sd.fv.p0.z);
-          p1Mag[i][j] = p1Mag[i][j] + BasicRGB(sd.fv.p1.x, sd.fv.p1.y, sd.fv.p1.z);
-          filmPos[i][j] = filmPos[i][j] + BasicRGB(sd.pFilm.x, sd.pFilm.y, 0);
-          lensPos[i][j] = lensPos[i][j] + BasicRGB(sd.pLens.x, sd.pLens.y, 0);
+        for (const SampleFeatures &sf : sfMat[i][j]) {
+          n0Mat[i][j] = n0Mat[i][j] + BasicRGB(sf.n0.x, sf.n0.y, sf.n0.z);
+          n1Mat[i][j] = n1Mat[i][j] + BasicRGB(sf.n1.x, sf.n1.y, sf.n1.z);
+          p0Mat[i][j] = p0Mat[i][j] + BasicRGB(sf.p0.x, sf.p0.y, sf.p0.z);
+          p1Mat[i][j] = p1Mat[i][j] + BasicRGB(sf.p1.x, sf.p1.y, sf.p1.z);
+          filmPosMat[i][j] = filmPosMat[i][j] + BasicRGB(sf.pFilm.x, sf.pFilm.y, 0);
+          lensPosMat[i][j] = lensPosMat[i][j] + BasicRGB(sf.pLens.x, sf.pLens.y, 0);
         }
-        n0Mag[i][j] = n0Mag[i][j] / fvMat[i][j].size();
-        n1Mag[i][j] = n1Mag[i][j] / fvMat[i][j].size();
-        p0Mag[i][j] = p0Mag[i][j] / fvMat[i][j].size();
-        p1Mag[i][j] = p1Mag[i][j] / fvMat[i][j].size();
-        filmPos[i][j] = filmPos[i][j] / fvMat[i][j].size();
-        lensPos[i][j] = lensPos[i][j] / fvMat[i][j].size();
+        n0Mat[i][j] = n0Mat[i][j] / sfMat[i][j].size();
+        n1Mat[i][j] = n1Mat[i][j] / sfMat[i][j].size();
+        p0Mat[i][j] = p0Mat[i][j] / sfMat[i][j].size();
+        p1Mat[i][j] = p1Mat[i][j] / sfMat[i][j].size();
+        filmPosMat[i][j] = filmPosMat[i][j] / sfMat[i][j].size();
+        lensPosMat[i][j] = lensPosMat[i][j] / sfMat[i][j].size();
       }
     }
     // Normalize
@@ -74,32 +82,32 @@ namespace pbrt {
 
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        maxN0.r = std::max(maxN0.r, n0Mag[i][j].r);
-        maxN0.g = std::max(maxN0.g, n0Mag[i][j].g);
-        maxN0.b = std::max(maxN0.b, n0Mag[i][j].b);
-        maxN1.r = std::max(maxN1.r, n1Mag[i][j].r);
-        maxN1.g = std::max(maxN1.g, n1Mag[i][j].g);
-        maxN1.b = std::max(maxN1.b, n1Mag[i][j].b);
-        maxP0.r = std::max(maxP0.r, p0Mag[i][j].r);
-        maxP0.g = std::max(maxP0.g, p0Mag[i][j].g);
-        maxP0.b = std::max(maxP0.b, p0Mag[i][j].b);
-        maxP1.r = std::max(maxP1.r, p1Mag[i][j].r);
-        maxP1.g = std::max(maxP1.g, p1Mag[i][j].g);
-        maxP1.b = std::max(maxP1.b, p1Mag[i][j].b);
-        maxFilmPos.r = std::max(maxFilmPos.r, filmPos[i][j].r);
-        maxFilmPos.g = std::max(maxFilmPos.g, filmPos[i][j].g);
-        maxLensPos.r = std::max(maxLensPos.r, lensPos[i][j].r);
-        maxLensPos.g = std::max(maxLensPos.g, lensPos[i][j].g);
+        maxN0.r = std::max(maxN0.r, n0Mat[i][j].r);
+        maxN0.g = std::max(maxN0.g, n0Mat[i][j].g);
+        maxN0.b = std::max(maxN0.b, n0Mat[i][j].b);
+        maxN1.r = std::max(maxN1.r, n1Mat[i][j].r);
+        maxN1.g = std::max(maxN1.g, n1Mat[i][j].g);
+        maxN1.b = std::max(maxN1.b, n1Mat[i][j].b);
+        maxP0.r = std::max(maxP0.r, p0Mat[i][j].r);
+        maxP0.g = std::max(maxP0.g, p0Mat[i][j].g);
+        maxP0.b = std::max(maxP0.b, p0Mat[i][j].b);
+        maxP1.r = std::max(maxP1.r, p1Mat[i][j].r);
+        maxP1.g = std::max(maxP1.g, p1Mat[i][j].g);
+        maxP1.b = std::max(maxP1.b, p1Mat[i][j].b);
+        maxFilmPos.r = std::max(maxFilmPos.r, filmPosMat[i][j].r);
+        maxFilmPos.g = std::max(maxFilmPos.g, filmPosMat[i][j].g);
+        maxLensPos.r = std::max(maxLensPos.r, lensPosMat[i][j].r);
+        maxLensPos.g = std::max(maxLensPos.g, lensPosMat[i][j].g);
       }
     }
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        n0Mag[i][j] = (n0Mag[i][j] / maxN0);
-        n1Mag[i][j] = (n1Mag[i][j] / maxN1);
-        p0Mag[i][j] = (p0Mag[i][j] / maxP0);
-        p1Mag[i][j] = (p1Mag[i][j] / maxP1);
-        filmPos[i][j] = (filmPos[i][j] / maxFilmPos);
-        lensPos[i][j] = (lensPos[i][j] / maxLensPos);
+        n0Mat[i][j] = (n0Mat[i][j] / maxN0);
+        n1Mat[i][j] = (n1Mat[i][j] / maxN1);
+        p0Mat[i][j] = (p0Mat[i][j] / maxP0);
+        p1Mat[i][j] = (p1Mat[i][j] / maxP1);
+        filmPosMat[i][j] = (filmPosMat[i][j] / maxFilmPos);
+        lensPosMat[i][j] = (lensPosMat[i][j] / maxLensPos);
       }
     }
 
@@ -112,13 +120,13 @@ namespace pbrt {
     Imf::Rgba* p1pixels = new Imf::Rgba[nCols * nRows];
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        n0pixels[j * nRows + i] = Imf::Rgba(n0Mag[i][j].r, n0Mag[i][j].g, n0Mag[i][j].b, 1);
-        n1pixels[j * nRows + i] = Imf::Rgba(n1Mag[i][j].r, n1Mag[i][j].g, n1Mag[i][j].b, 1);
-        p0pixels[j * nRows + i] = Imf::Rgba(p0Mag[i][j].r, p0Mag[i][j].g, p0Mag[i][j].b, 1);
-        p1pixels[j * nRows + i] = Imf::Rgba(p1Mag[i][j].r, p1Mag[i][j].g, p1Mag[i][j].b, 1);
+        n0pixels[j * nRows + i] = Imf::Rgba(n0Mat[i][j].r, n0Mat[i][j].g, n0Mat[i][j].b, 1);
+        n1pixels[j * nRows + i] = Imf::Rgba(n1Mat[i][j].r, n1Mat[i][j].g, n1Mat[i][j].b, 1);
+        p0pixels[j * nRows + i] = Imf::Rgba(p0Mat[i][j].r, p0Mat[i][j].g, p0Mat[i][j].b, 1);
+        p1pixels[j * nRows + i] = Imf::Rgba(p1Mat[i][j].r, p1Mat[i][j].g, p1Mat[i][j].b, 1);
         // Film and Lens position
-        filmPosPixels[j * nRows + i] = Imf::Rgba(filmPos[i][j].r, filmPos[i][j].g, 0, 1);
-        lensPosPixels[j * nRows + i] = Imf::Rgba(lensPos[i][j].r, lensPos[i][j].g, 0, 1);
+        filmPosPixels[j * nRows + i] = Imf::Rgba(filmPosMat[i][j].r, filmPosMat[i][j].g, 0, 1);
+        lensPosPixels[j * nRows + i] = Imf::Rgba(lensPosMat[i][j].r, lensPosMat[i][j].g, 0, 1);
 
       }
     }
@@ -144,7 +152,6 @@ namespace pbrt {
 
     delete[] filmPosPixels;
     delete[] lensPosPixels;
-
     delete[] p0pixels;
     delete[] p1pixels;
     delete[] n0pixels;
@@ -166,9 +173,13 @@ namespace pbrt {
     rrThreshold(rrThreshold),
     lightSampleStrategy(lightSampleStrategy) {}
 
+
+
   void RPFIntegrator::Preprocess(const Scene &scene, Sampler &sampler) {
     lightDistribution = CreateLightSampleDistribution(lightSampleStrategy, scene);
   }
+
+  // Preprocess samples
 
   // Render
   void RPFIntegrator::Render(const Scene &scene) {  
@@ -176,11 +187,11 @@ namespace pbrt {
     Vector2i sampleExtent = sampleBounds.Diagonal();
     ProgressReporter reporter(sampleExtent.x*sampleExtent.y, "Rendering");
     // Allocate 3D matrix of samples
-    std::vector<std::vector<std::vector<SampleData>>> samples(
+    std::vector<std::vector<std::vector<SampleFeatures>>> samples(
       sampleExtent.x,
-      std::vector<std::vector<SampleData>>(
+      std::vector<std::vector<SampleFeatures>>(
         sampleExtent.y,
-        std::vector<SampleData>()
+        std::vector<SampleFeatures>()
       )
     );
     { 
@@ -210,21 +221,18 @@ namespace pbrt {
           Float rayWeight = camera->GenerateRayDifferential(cameraSample, &ray);
           ray.ScaleDifferentials(1 / std::sqrt((Float)sampler->samplesPerPixel));
           ++nCameraRays;
-          // Evaluate radiance along camera ray and capture FeatureVector
-          Spectrum L(0.f);
-          FeatureVector fv;
-          if (rayWeight > 0) {
-            L = Li(ray, scene, *sampler, arena, fv);
-          }
-          // Save sample data
-          SampleData sd(
-            cameraSample.pFilm,
-            cameraSample.pLens,
-            L,
-            rayWeight,
-            fv
+          // Evaluate radiance along camera ray and capture Features
+          SampleFeatures sf(
+            cameraSample.pFilm, // Film position
+            cameraSample.pLens, // Lens position
+            0.f ,                // L (placeholder)
+            rayWeight           // Ray weight
           );
-          samples[pixel.x][pixel.y].push_back(sd);
+          if (rayWeight > 0) {
+            // Evaluate radiance along camera ray
+            Li(ray, scene, *sampler, arena, sf);
+          }
+          samples[pixel.x][pixel.y].push_back(sf);
           // Free _MemoryArena_ memory from computing image sample value
           arena.Reset();
         } while (sampler->StartNextSample());        
@@ -232,15 +240,29 @@ namespace pbrt {
     }
     LOG(INFO) << "Finished sampling pixels" << sampleBounds;
     // Write FeatureVector data to file
-    writeFVMat(samples, camera->film->filename);
+    writeSFMat(samples, camera->film->filename);
+
+
+    // For each pixel, gather 
+
+
+
+
+
+
+
+
+
+
+
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
     // Add camera ray's contribution to image
     double numSamples = 0;
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
-        for (const SampleData &sd : samples[x][y]) {
-          filmTile->AddSample(sd.pFilm, sd.L, sd.rayWeight);
+        for (const SampleFeatures &sf : samples[x][y]) {
+          filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
         }
         numSamples += samples[x][y].size();
       }
@@ -253,13 +275,13 @@ namespace pbrt {
     std::cout << "Average number of samples per pixel: " << numSamples << std::endl;
     // COUT the filmPoistion and lensPosition of the first pixel
     std::cout << "Film Position of the first pixel: ";
-    for (const SampleData &sd : samples[sx][sy]) {
-      std::cout << sd.pFilm << " ";
+    for (const SampleFeatures &sf : samples[sx][sy]) {
+      std::cout << sf.pFilm << " ";
     }
     std::cout << std::endl;
     std::cout << "Lens Position of the first pixel: ";
-    for (const SampleData &sd : samples[sx][sy]) {
-      std::cout << sd.pLens << " ";
+    for (const SampleFeatures &sf : samples[sx][sy]) {
+      std::cout << sf.pLens << " ";
     }
     std::cout << std::endl;
 
@@ -272,10 +294,10 @@ namespace pbrt {
   }
 
   // Luminance samplings
-  Spectrum RPFIntegrator::Li(
+  void RPFIntegrator::Li(
     const RayDifferential &r, const Scene &scene,
     Sampler &sampler, MemoryArena &arena,
-    FeatureVector &fv,
+    SampleFeatures &sf,
     int depth
   ) const {
 
@@ -316,11 +338,11 @@ namespace pbrt {
       
       // EDIT: Save FeatureVector data
       if (bounces == 0) {
-        fv.n0 = isect.n;
-        fv.p0 = isect.p;
+        sf.n0 = isect.n;
+        sf.p0 = isect.p;
       } else if (bounces == 1) {
-        fv.n1 = isect.n;
-        fv.p1 = isect.p;
+        sf.n1 = isect.n;
+        sf.p1 = isect.p;
       }
 
       // Compute scattering functions and skip over medium boundaries
@@ -400,8 +422,8 @@ namespace pbrt {
       }
   }
   ReportValue(pathLength, bounces);
-
-  return L;
+  // Set the Luminance value
+  sf.L = L;
 }
 
 RPFIntegrator *CreateRPFIntegrator(

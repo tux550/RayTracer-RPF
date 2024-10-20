@@ -52,7 +52,12 @@ struct BasicRGB {
 
 };
 
-struct FeatureVector {
+std::vector<std::vector<BasicRGB>> createBasicRGBMatrix(
+  size_t nRows,
+  size_t nCols
+);
+
+struct SampleFeatures {
   // FIRST INTERSECTION
   Normal3f n0; // Normal
   Point3f p0;  // World-space position
@@ -60,36 +65,41 @@ struct FeatureVector {
   // SECOND INTERSECTION
   Normal3f n1; // Normal
   Point3f p1;  // World-space position
+  // POSITION
+  Point2f pFilm;
+  Point2f pLens;
+  // Others
+  Float rayWeight;
+  Spectrum L;
 
   // CONSTRUCTOR
-  FeatureVector():
+  SampleFeatures(const Point2f &pFilm, const Point2f &pLens, const Spectrum &L, Float rayWeight):
+    pFilm(pFilm),
+    pLens(pLens),
     n0(Normal3f(0, 0, 0)),
     p0(Point3f(0, 0, 0)),
     n1(Normal3f(0, 0, 0)),
-    p1(Point3f(0, 0, 0))
-  {};
-};
-
-void writeFVMat(const std::vector<std::vector<
- std::vector<FeatureVector>>> &fvMat, const std::string &filename);
-
-struct SampleData {
-  // SampleData Public Data
-  Point2f pFilm;
-  Point2f pLens;
-  Spectrum L;
-  Float rayWeight;
-  FeatureVector fv;
-
-  // CONSTRUCTOR
-  SampleData(const Point2f &pFilm, const Point2f &pLens, const Spectrum &L, Float rayWeight, const FeatureVector &fv):
-    pFilm(pFilm),
-    pLens(pLens),
-    L(L),
+    p1(Point3f(0, 0, 0)),
     rayWeight(rayWeight),
-    fv(fv)
-  {};
+    L(L)
+    {};
+  
+  // To vector
+  std::vector<double> toVector() const {
+    return {
+      n0.x, n0.y, n0.z,
+      p0.x, p0.y, p0.z,
+      n1.x, n1.y, n1.z,
+      p1.x, p1.y, p1.z,
+      pFilm.x, pFilm.y,
+      pLens.x, pLens.y,
+      rayWeight
+      //L.c[0], L.c[1], L.c[2]
+    };
+  }
 };
+
+void writeSFMat(const std::vector<std::vector<SampleFeatures>>  &sfMat, const std::string &filename);
 
 // RPFIntegrator
 class RPFIntegrator : public Integrator {
@@ -105,12 +115,12 @@ class RPFIntegrator : public Integrator {
     );
     void Preprocess(const Scene &scene, Sampler &sampler);
     void Render(const Scene &scene);
-    Spectrum Li(
+    void Li(
       const RayDifferential &ray,
       const Scene &scene,
       Sampler &sampler,
       MemoryArena &arena,
-      FeatureVector &fv,
+      SampleFeatures &sf,
       int depth = 0
     ) const;
   protected:
