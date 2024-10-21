@@ -24,67 +24,130 @@ typedef std::vector<SampleFVector> SampleFMatrix;
 typedef std::array<double, 2> SampleP;
 // SampleRandom: pLens
 typedef std::array<double, 2> SampleR;
+// SampleColor: L
+typedef std::array<double, 3> SampleC;
 
 struct SampleData {
-  // === SCREEN POSITION ===
-  Point2f pFilm;
-  // === COLORS ===
-  Spectrum L;
-  // === FEATURES ===
-  // First intersection
-  Normal3f n0; // Normal
-  Point3f p0;  // World-space position
-              // Texture?
-  // Second intersection
-  Normal3f n1; // Normal
-  Point3f p1;  // World-space position
-  // === RANDOM PARAMETERS ==
-  Point2f pLens;
-  // === OTHERS? ===
+  // Types
+  typedef std::array<double, 19> SampleFullArray;
+  // Data regions: 
+  // SCREEN POSITION: pFilm
+  // COLORS: L
+  // RANDOM PARAMETERS: pLens
+  // FEATURES: n0, p0, n1, p1 (+Texture?)
+  // Other? rayWeight 
+  SampleFullArray data;
   Float rayWeight;
-  // CONSTRUCTOR
+
+  void setPFilm(const Point2f &pFilm) {
+    data[0] = pFilm.x;
+    data[1] = pFilm.y;
+  }
+  void setL(const Spectrum &L) {
+    data[2] = L[0];
+    data[3] = L[1];
+    data[4] = L[2];
+  }
+  void setPLens(const Point2f &pLens) {
+    data[5] = pLens.x;
+    data[6] = pLens.y;
+  }
+  void setN0(const Normal3f &n0) {
+    data[7] = n0.x;
+    data[8] = n0.y;
+    data[9] = n0.z;
+  }
+  void setP0(const Point3f &p0) {
+    data[10] = p0.x;
+    data[11] = p0.y;
+    data[12] = p0.z;
+  }
+  void setN1(const Normal3f &n1) {
+    data[13] = n1.x;
+    data[14] = n1.y;
+    data[15] = n1.z;
+  }
+  void setP1(const Point3f &p1) {
+    data[16] = p1.x;
+    data[17] = p1.y;
+    data[18] = p1.z;
+  }
+  // === GETTERS ===
+  Point2f getPFilm() const {
+    return Point2f(data[0], data[1]);
+  }
+  Point2f getPLens() const {
+    return Point2f(data[5], data[6]);
+  }
+  Spectrum getL() const {
+    Float rgb[3] = {data[2], data[3], data[4]};
+    return Spectrum::FromRGB(rgb);
+  }
+  Normal3f getN0() const {
+    return Normal3f(data[7], data[8], data[9]);
+  }
+  Point3f getP0() const {
+    return Point3f(data[10], data[11], data[12]);
+  }
+  Normal3f getN1() const {
+    return Normal3f(data[13], data[14], data[15]);
+  }
+  Point3f getP1() const {
+    return Point3f(data[16], data[17], data[18]);
+  }
+
+  // CONSTRUCTORS
+  SampleData():
+    data(),
+    rayWeight(0)
+    {
+      for (int i = 0; i < 19; i++) {
+        data[i] = 0;
+      }
+    };
+  
   SampleData(
     const Point2f &pFilm,
     const Point2f &pLens,
     const Spectrum &L,
     Float rayWeight
   ):
-    pFilm(pFilm),
-    pLens(pLens),
-    n0(Normal3f(0, 0, 0)),
-    p0(Point3f(0, 0, 0)),
-    n1(Normal3f(0, 0, 0)),
-    p1(Point3f(0, 0, 0)),
-    rayWeight(rayWeight),
-    L(L)
-    {};
+    data(),
+    rayWeight(rayWeight)
+    {
+      setPFilm(pFilm);
+      setL(L);
+      setPLens(pLens);
+    };
 
-  //  == TRANSFORM TO VECTORS ==
-  SampleF toFeatureVector() const {
+  //  == EXTRACT SECTIONS ==
+  SampleF getFeatures() const {
     return {
-      n0.x, n0.y, n0.z,
-      p0.x, p0.y, p0.z,
-      n1.x, n1.y, n1.z,
-      p1.x, p1.y, p1.z
+      data[7], data[8], data[9], // n0
+      data[10], data[11], data[12], // p0
+      data[13], data[14], data[15], // n1
+      data[16], data[17], data[18] // p1
     };
   }
-  std::array<double, 3> toN0() const {
-    return {n0.x, n0.y, n0.z};
+
+  SampleP getPosition() const {
+    return {data[0], data[1]};
   }
-  std::array<double, 3> toN1() const {
-    return {n1.x, n1.y, n1.z};
+
+  SampleR getRandom() const {
+    return {data[5], data[6]};
   }
-  std::array<double, 3> toP0() const {
-    return {p0.x, p0.y, p0.z};
+
+  SampleC getColor() const {
+    return {data[2], data[3], data[4]};
   }
-  std::array<double, 3> toP1() const {
-    return {p1.x, p1.y, p1.z};
+
+  SampleFullArray getFullArray() const {
+    return data;
   }
-  SampleP toPositionVector() const {
-    return {pFilm.x, pFilm.y};
-  }
-  SampleR toRandomVector() const {
-    return {pLens.x, pLens.y};
+  // Set from full array
+  void setFullArray(const SampleFullArray &fullArray) {
+    data = fullArray;
   }
 };
 

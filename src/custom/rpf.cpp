@@ -47,12 +47,19 @@ namespace pbrt {
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
         for (const SampleData &sf : sdMat[i][j]) {
-          n0Mat[i][j] = n0Mat[i][j] + BasicRGB(sf.n0[0], sf.n0[1], sf.n0[2]);
-          n1Mat[i][j] = n1Mat[i][j] + BasicRGB(sf.n1[0], sf.n1[1], sf.n1[2]);
-          p0Mat[i][j] = p0Mat[i][j] + BasicRGB(sf.p0[0], sf.p0[1], sf.p0[2]);
-          p1Mat[i][j] = p1Mat[i][j] + BasicRGB(sf.p1[0], sf.p1[1], sf.p1[2]);
-          filmPosMat[i][j] = filmPosMat[i][j] + BasicRGB(sf.pFilm[0], sf.pFilm[1], 0);
-          lensPosMat[i][j] = lensPosMat[i][j] + BasicRGB(sf.pLens[0], sf.pLens[1], 0);
+          auto n0 = sf.getN0();
+          auto n1 = sf.getN1();
+          auto p0 = sf.getP0();
+          auto p1 = sf.getP1();
+          auto pFilm = sf.getPFilm();
+          auto pLens = sf.getPLens();
+
+          n0Mat[i][j] = n0Mat[i][j] + BasicRGB(n0[0], n0[1], n0[2]);
+          n1Mat[i][j] = n1Mat[i][j] + BasicRGB(n1[0], n1[1], n1[2]);
+          p0Mat[i][j] = p0Mat[i][j] + BasicRGB(p0[0], p0[1], p0[2]);
+          p1Mat[i][j] = p1Mat[i][j] + BasicRGB(p1[0], p1[1], p1[2]);
+          filmPosMat[i][j] = filmPosMat[i][j] + BasicRGB(pFilm[0], pFilm[1], 0);
+          lensPosMat[i][j] = lensPosMat[i][j] + BasicRGB(pLens[0], pLens[1], 0);
         }
         // Average
         if (sdMat[i][j].size() > 0) {
@@ -126,7 +133,7 @@ namespace pbrt {
         // Get mean and stdDev for each feature
         std::vector<SampleF> vectors;
         for (const SampleData &sd : samples[i][j]) {
-          vectors.push_back(sd.toFeatureVector());
+          vectors.push_back(sd.getFeatures());
         }
         meanMatrix[i][j] = getMean(vectors);
         stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
@@ -168,7 +175,7 @@ namespace pbrt {
             // Check each sample in pixel
             for (const SampleData &sf : samples[x][y]) {
               // Check if all features are within 3 std deviations
-              auto sfVec = sf.toFeatureVector();
+              auto sfVec = sf.getFeatures();
               bool within3StdDevs = 
                 allLessThan(
                   absArray(subtractArrays(sfVec, meanMatrix[i][j])),
@@ -295,7 +302,8 @@ namespace pbrt {
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sf : samples[x][y]) {
-          filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
+          filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight);
+          //filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
         }
         numSamples += samples[x][y].size();
       }
@@ -357,11 +365,11 @@ namespace pbrt {
       
       // EDIT: Save FeatureVector data
       if (bounces == 0) {
-        sf.n0 = isect.n;
-        sf.p0 = isect.p;
+        sf.setN0(isect.n);
+        sf.setP0(isect.p);
       } else if (bounces == 1) {
-        sf.n1 = isect.n;
-        sf.p1 = isect.p;
+        sf.setN1(isect.n);
+        sf.setP1(isect.p);
       }
 
       // Compute scattering functions and skip over medium boundaries
@@ -442,7 +450,8 @@ namespace pbrt {
   }
   ReportValue(pathLength, bounces);
   // Set the Luminance value
-  sf.L = L;
+  //sf.L = L;
+  sf.setL(L);
 }
 
 RPFIntegrator *CreateRPFIntegrator(
