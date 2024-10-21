@@ -16,6 +16,11 @@
 
 namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
+  STAT_COUNTER("Integrator/MaxNeighborhoodSize", maxNeighborhoodSize);
+  STAT_COUNTER("Integrator/MeanNeighborhoodSize", meanNeighborhoodSize);
+  STAT_COUNTER("Integrator/MinNeighborhoodSize", minNeighborhoodSize);
+  STAT_COUNTER("Integrator/EmptyNeighborhoods", emptyNeighborhoods);
+
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
@@ -29,6 +34,45 @@ namespace pbrt {
     );
   }
 
+  InfoVec getMean(
+    const std::vector<InfoVec> &vectors
+  ) {
+    size_t num_samples = vectors.size();
+    size_t num_features = vectors[0].size();
+    // Init in 0
+    auto mean = InfoVec(num_features, 0);
+    // Calculate mean
+    for (size_t i = 0; i < num_samples; ++i) {
+      for (size_t j = 0; j < num_features; ++j) {
+        mean[j] += vectors[i][j];
+      }
+    }
+    for (size_t j = 0; j < num_features; ++j) {
+      mean[j] /= num_samples;
+    }
+    return mean;
+  }
+
+  InfoVec getStdDev(
+    const std::vector<InfoVec> &vectors,
+    const InfoVec &mean
+  ) {
+    size_t num_samples = vectors.size();
+    size_t num_features = vectors[0].size();
+    // Init in 0
+    InfoVec stdDev = InfoVec(num_features, 0);
+    // Calculate stdDev
+    for (size_t i = 0; i < num_samples; ++i) {
+      for (size_t j = 0; j < num_features; ++j) {
+        stdDev[j] += (vectors[i][j] - mean[j]) * (vectors[i][j] - mean[j]);
+      }
+    }
+    for (size_t j = 0; j < num_features; ++j) {
+      stdDev[j] = std::sqrt(stdDev[j] / num_samples);
+    }
+    return stdDev;
+  }
+  
   void writeSFMat(const std::vector<std::vector<std::vector<SampleFeatures>>>  &sfMat, const std::string &filename) {
     // Remove any extension from filename
     std::string base_filename = filename;
@@ -180,6 +224,94 @@ namespace pbrt {
   }
 
   // Preprocess samples
+  void RPFIntegrator::getStatsPerPixel(
+    const std::vector<std::vector<
+      std::vector<SampleFeatures>
+    >> &samples,
+    InfoVecMatrix &meanMatrix,
+    InfoVecMatrix &stdDevMatrix
+  ) {
+    size_t nRows = samples.size();
+    size_t nCols = samples[0].size();
+    size_t nSamples = samples[0][0].size();
+    // Init matrices (nRows x nCols)
+    meanMatrix = InfoVecMatrix(nRows, std::vector<InfoVec>(nCols, InfoVec()));
+    stdDevMatrix = InfoVecMatrix(nRows, std::vector<InfoVec>(nCols, InfoVec()));
+    // Calculate mean and stdDev for each pixel
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        // Get mean and stdDev for each feature
+        std::vector<InfoVec> vectors;
+        for (const SampleFeatures &sf : samples[i][j]) {
+          vectors.push_back(sf.toInfoVec());
+        }
+        meanMatrix[i][j] = getMean(vectors);
+        stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
+      }
+    }
+  }
+
+  std::vector<std::vector<
+    std::vector<SampleFeatures>
+  >> RPFIntegrator::getNeighborhoodSamples(
+    const std::vector<std::vector<
+      std::vector<SampleFeatures>
+    >> &samples,
+    size_t box_size
+  ) {
+    // GET STATS FOR EACH PIXEL
+    // Init matrices
+    auto meanMatrix = InfoVecMatrix();
+    auto stdDevMatrix = InfoVecMatrix();
+    // Get mean and stdDev for each pixel
+    getStatsPerPixel(samples, meanMatrix, stdDevMatrix);
+    // COLLECT NEIGHBORHOOD SAMPLES THAT ARE WITHIN 3 STD DEVIATIONS
+    size_t nRows = samples.size();
+    size_t nCols = samples[0].size();
+    auto neighborhoodSamples = std::vector<std::vector<std::vector<SampleFeatures>>>();
+    for (size_t i = 0; i < nRows; ++i) {
+      std::vector<std::vector<SampleFeatures>> row;
+      for (size_t j = 0; j < nCols; ++j) {
+        // Current pixel (i, j). 
+        // Check all pixels within box_size (not including current pixel)
+        // Assumes box_size is odd
+        auto b_delta = (box_size-1) / 2;
+        auto neighborhood = std::vector<SampleFeatures>();
+        for (size_t x = i - b_delta; x <= i + b_delta; ++x) {
+          for (size_t y = j - b_delta; y <= j + b_delta; ++y) {
+            // Skip if current pixel
+            if (x == i && y == j) {
+              continue;
+            }
+            // If pixel is outside bounds, skip
+            if (x < 0 || x >= nRows || y < 0 || y >= nCols) {
+              continue;
+            }
+            // Check each sample in pixel
+            for (const SampleFeatures &sf : samples[x][y]) {
+              // Check if all features are within 3 std deviations
+              bool within3StdDevs = true;
+              for (size_t k = 0; k < sf.toInfoVec().size(); ++k) {
+                if (std::abs(sf.toInfoVec()[k] - meanMatrix[i][j][k]) > 3 * stdDevMatrix[i][j][k]) {
+                  within3StdDevs = false;
+                  break;
+                }
+              }
+              if (within3StdDevs) {
+                neighborhood.push_back(sf);
+              }
+            }
+          }
+        }
+        // Add neighborhood to row
+        row.push_back(neighborhood);
+      }
+      // Add row to neighborhoodSamples
+      neighborhoodSamples.push_back(row);
+    }
+    // Create a new matrix, containing a set of neighbour samples for each pixel  
+    return neighborhoodSamples;
+  }
 
   // Render
   void RPFIntegrator::Render(const Scene &scene) {  
@@ -244,6 +376,33 @@ namespace pbrt {
 
 
     // PREPROCESSING THE SAMPLES
+    // To do this, we compute the average feature vector m{f,p} and the
+    // standard deviation vector σf P for each component of the feature
+    // vector for the set of samples P at the current pixel. We then cre-
+    // ate our neighborhood N using only samples whose features are all
+    // within 3 standard deviations of the mean for the pixel
+    // Get Neighborhood samples
+    auto neighborhoodSamples = getNeighborhoodSamples(samples, 3);
+    // COUT STATS: min, max and average number of samples in the neighborhood
+    size_t minSamples = std::numeric_limits<size_t>::max();
+    size_t maxSamples = 0;
+    size_t totalSamples = 0;
+    for (size_t i = 0; i < sampleExtent.x; ++i) {
+      for (size_t j = 0; j < sampleExtent.y; ++j) {
+        size_t nSamples = neighborhoodSamples[i][j].size();
+        minSamples = std::min(minSamples, nSamples);
+        maxSamples = std::max(maxSamples, nSamples);
+        totalSamples += nSamples;
+      }
+    };
+
+    minNeighborhoodSize = minSamples;
+    maxNeighborhoodSize = maxSamples;
+    meanNeighborhoodSize = totalSamples / (sampleExtent.x * sampleExtent.y);
+    emptyNeighborhoods = minSamples == 0 ? 1 : 0;
+    
+
+
     // 1. Clustering
     // 2. Normalization
 

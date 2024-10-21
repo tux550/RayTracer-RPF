@@ -57,6 +57,10 @@ std::vector<std::vector<BasicRGB>> createBasicRGBMatrix(
   size_t nCols
 );
 
+
+typedef std::vector<double> InfoVec;
+typedef std::vector<std::vector<InfoVec>> InfoVecMatrix;
+
 struct SampleFeatures {
   // FIRST INTERSECTION
   Normal3f n0; // Normal
@@ -85,7 +89,7 @@ struct SampleFeatures {
     {};
   
   // To vector
-  std::vector<double> toVector() const {
+  InfoVec toInfoVec() const {
     return {
       n0.x, n0.y, n0.z,
       p0.x, p0.y, p0.z,
@@ -98,6 +102,16 @@ struct SampleFeatures {
     };
   }
 };
+
+// Get Standard Deviation and Mean from Vectors
+InfoVec getMean(
+  const std::vector<InfoVec> &vectors
+);
+
+InfoVec getStdDev(
+  const std::vector<InfoVec> &vectors,
+  const InfoVec &mean
+);
 
 void writeSFMat(const std::vector<std::vector<SampleFeatures>>  &sfMat, const std::string &filename);
 
@@ -135,6 +149,22 @@ class RPFIntegrator : public Integrator {
 
     std::shared_ptr<Sampler> sampler;
     const Bounds2i pixelBounds;
+    // Utility functions
+    void getStatsPerPixel(
+      const std::vector<std::vector<
+        std::vector<SampleFeatures>
+      >> &samples,
+      InfoVecMatrix &meanMatrix,
+      InfoVecMatrix &stdDevMatrix
+    );
+    std::vector<std::vector<
+      std::vector<SampleFeatures>
+    >> getNeighborhoodSamples(
+      const std::vector<std::vector<
+        std::vector<SampleFeatures>
+      >> &samples,
+      size_t box_size
+    );
 };
 
 RPFIntegrator *CreateRPFIntegrator(
