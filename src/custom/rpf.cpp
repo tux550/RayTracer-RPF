@@ -1,6 +1,6 @@
 
-// rpf.cpp*
-#include "integrators/rpf.h"
+// custom/rpf.cpp*
+#include "custom/rpf.h"
 #include "bssrdf.h"
 #include "camera.h"
 #include "film.h"
@@ -19,187 +19,66 @@ namespace pbrt {
   STAT_COUNTER("Integrator/MaxNeighborhoodSize", maxNeighborhoodSize);
   STAT_COUNTER("Integrator/MeanNeighborhoodSize", meanNeighborhoodSize);
   STAT_COUNTER("Integrator/MinNeighborhoodSize", minNeighborhoodSize);
-  STAT_COUNTER("Integrator/EmptyNeighborhoods", emptyNeighborhoods);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
-  std::vector<std::vector<BasicRGB>> createBasicRGBMatrix(
-    size_t nRows,
-    size_t nCols
-  ) {
-    return std::vector<std::vector<BasicRGB>>(
-      nRows,
-      std::vector<BasicRGB>(nCols, {0, 0, 0})
-    );
-  }
-
-  InfoVec getMean(
-    const std::vector<InfoVec> &vectors
-  ) {
-    size_t num_samples = vectors.size();
-    size_t num_features = vectors[0].size();
-    // Init in 0
-    auto mean = InfoVec(num_features, 0);
-    // Calculate mean
-    for (size_t i = 0; i < num_samples; ++i) {
-      for (size_t j = 0; j < num_features; ++j) {
-        mean[j] += vectors[i][j];
-      }
-    }
-    for (size_t j = 0; j < num_features; ++j) {
-      mean[j] /= num_samples;
-    }
-    return mean;
-  }
-
-  InfoVec getStdDev(
-    const std::vector<InfoVec> &vectors,
-    const InfoVec &mean
-  ) {
-    size_t num_samples = vectors.size();
-    size_t num_features = vectors[0].size();
-    // Init in 0
-    InfoVec stdDev = InfoVec(num_features, 0);
-    // Calculate stdDev
-    for (size_t i = 0; i < num_samples; ++i) {
-      for (size_t j = 0; j < num_features; ++j) {
-        stdDev[j] += (vectors[i][j] - mean[j]) * (vectors[i][j] - mean[j]);
-      }
-    }
-    for (size_t j = 0; j < num_features; ++j) {
-      stdDev[j] = std::sqrt(stdDev[j] / num_samples);
-    }
-    return stdDev;
-  }
   
-  void writeSFMat(const std::vector<std::vector<std::vector<SampleFeatures>>>  &sfMat, const std::string &filename) {
+  void visualizeSD(
+    const SampleDataSetMatrix &sdMat,
+    const std::string &filename) {
+
     // Remove any extension from filename
     std::string base_filename = filename;
     std::string::size_type idx = base_filename.rfind('.');
     if (idx != std::string::npos) {
       base_filename = base_filename.substr(0, idx);
     }
-
-    std::string filmPosFilename = base_filename + "_Film_Position.exr";
-    std::string lensPosFilename = base_filename + "_Lens_Position.exr";
-    std::string n0filename = base_filename + "_I0_Normal.exr";
-    std::string n1filename = base_filename + "_I1_Normal.exr";
-    std::string p0filename = base_filename + "_I0_Position.exr";
-    std::string p1filename = base_filename + "_I1_Position.exr";
-
-    size_t nRows = sfMat.size();
-    size_t nCols = sfMat[0].size();
-    // Calculate magnitude of normal vectors and position vectors
+    size_t nRows = sdMat.size();
+    size_t nCols = sdMat[0].size();
+    // Generate matrix
     auto n0Mat = createBasicRGBMatrix(nRows, nCols);
     auto n1Mat = createBasicRGBMatrix(nRows, nCols);
     auto p0Mat = createBasicRGBMatrix(nRows, nCols);
     auto p1Mat = createBasicRGBMatrix(nRows, nCols);
     auto filmPosMat = createBasicRGBMatrix(nRows, nCols);
     auto lensPosMat = createBasicRGBMatrix(nRows, nCols);
-    
+    // Fill matrices
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
-        for (const SampleFeatures &sf : sfMat[i][j]) {
-          n0Mat[i][j] = n0Mat[i][j] + BasicRGB(sf.n0.x, sf.n0.y, sf.n0.z);
-          n1Mat[i][j] = n1Mat[i][j] + BasicRGB(sf.n1.x, sf.n1.y, sf.n1.z);
-          p0Mat[i][j] = p0Mat[i][j] + BasicRGB(sf.p0.x, sf.p0.y, sf.p0.z);
-          p1Mat[i][j] = p1Mat[i][j] + BasicRGB(sf.p1.x, sf.p1.y, sf.p1.z);
-          filmPosMat[i][j] = filmPosMat[i][j] + BasicRGB(sf.pFilm.x, sf.pFilm.y, 0);
-          lensPosMat[i][j] = lensPosMat[i][j] + BasicRGB(sf.pLens.x, sf.pLens.y, 0);
+        for (const SampleData &sf : sdMat[i][j]) {
+          n0Mat[i][j] = n0Mat[i][j] + BasicRGB(sf.n0[0], sf.n0[1], sf.n0[2]);
+          n1Mat[i][j] = n1Mat[i][j] + BasicRGB(sf.n1[0], sf.n1[1], sf.n1[2]);
+          p0Mat[i][j] = p0Mat[i][j] + BasicRGB(sf.p0[0], sf.p0[1], sf.p0[2]);
+          p1Mat[i][j] = p1Mat[i][j] + BasicRGB(sf.p1[0], sf.p1[1], sf.p1[2]);
+          filmPosMat[i][j] = filmPosMat[i][j] + BasicRGB(sf.pFilm[0], sf.pFilm[1], 0);
+          lensPosMat[i][j] = lensPosMat[i][j] + BasicRGB(sf.pLens[0], sf.pLens[1], 0);
         }
-        n0Mat[i][j] = n0Mat[i][j] / sfMat[i][j].size();
-        n1Mat[i][j] = n1Mat[i][j] / sfMat[i][j].size();
-        p0Mat[i][j] = p0Mat[i][j] / sfMat[i][j].size();
-        p1Mat[i][j] = p1Mat[i][j] / sfMat[i][j].size();
-        filmPosMat[i][j] = filmPosMat[i][j] / sfMat[i][j].size();
-        lensPosMat[i][j] = lensPosMat[i][j] / sfMat[i][j].size();
+        // Average
+        if (sdMat[i][j].size() > 0) {
+          n0Mat[i][j] = n0Mat[i][j] / sdMat[i][j].size();
+          n1Mat[i][j] = n1Mat[i][j] / sdMat[i][j].size();
+          p0Mat[i][j] = p0Mat[i][j] / sdMat[i][j].size();
+          p1Mat[i][j] = p1Mat[i][j] / sdMat[i][j].size();
+          filmPosMat[i][j] = filmPosMat[i][j] / sdMat[i][j].size();
+          lensPosMat[i][j] = lensPosMat[i][j] / sdMat[i][j].size();
+        }
       }
     }
     // Normalize
-    BasicRGB maxN0 = {0, 0, 0};
-    BasicRGB maxN1 = {0, 0, 0};
-    BasicRGB maxP0 = {0, 0, 0};
-    BasicRGB maxP1 = {0, 0, 0};
-    BasicRGB maxFilmPos = {0, 0, 0};
-    BasicRGB maxLensPos = {0, 0, 0};
-
-    for (size_t i = 0; i < nRows; ++i) {
-      for (size_t j = 0; j < nCols; ++j) {
-        maxN0.r = std::max(maxN0.r, n0Mat[i][j].r);
-        maxN0.g = std::max(maxN0.g, n0Mat[i][j].g);
-        maxN0.b = std::max(maxN0.b, n0Mat[i][j].b);
-        maxN1.r = std::max(maxN1.r, n1Mat[i][j].r);
-        maxN1.g = std::max(maxN1.g, n1Mat[i][j].g);
-        maxN1.b = std::max(maxN1.b, n1Mat[i][j].b);
-        maxP0.r = std::max(maxP0.r, p0Mat[i][j].r);
-        maxP0.g = std::max(maxP0.g, p0Mat[i][j].g);
-        maxP0.b = std::max(maxP0.b, p0Mat[i][j].b);
-        maxP1.r = std::max(maxP1.r, p1Mat[i][j].r);
-        maxP1.g = std::max(maxP1.g, p1Mat[i][j].g);
-        maxP1.b = std::max(maxP1.b, p1Mat[i][j].b);
-        maxFilmPos.r = std::max(maxFilmPos.r, filmPosMat[i][j].r);
-        maxFilmPos.g = std::max(maxFilmPos.g, filmPosMat[i][j].g);
-        maxLensPos.r = std::max(maxLensPos.r, lensPosMat[i][j].r);
-        maxLensPos.g = std::max(maxLensPos.g, lensPosMat[i][j].g);
-      }
-    }
-    for (size_t i = 0; i < nRows; ++i) {
-      for (size_t j = 0; j < nCols; ++j) {
-        n0Mat[i][j] = (n0Mat[i][j] / maxN0);
-        n1Mat[i][j] = (n1Mat[i][j] / maxN1);
-        p0Mat[i][j] = (p0Mat[i][j] / maxP0);
-        p1Mat[i][j] = (p1Mat[i][j] / maxP1);
-        filmPosMat[i][j] = (filmPosMat[i][j] / maxFilmPos);
-        lensPosMat[i][j] = (lensPosMat[i][j] / maxLensPos);
-      }
-    }
-
+    normalizeRGBMatrix(n0Mat);
+    normalizeRGBMatrix(n1Mat);
+    normalizeRGBMatrix(p0Mat);
+    normalizeRGBMatrix(p1Mat);
+    normalizeRGBMatrix(filmPosMat);
+    normalizeRGBMatrix(lensPosMat);
     // Write to file
-    Imf::Rgba* filmPosPixels = new Imf::Rgba[nCols * nRows];
-    Imf::Rgba* lensPosPixels = new Imf::Rgba[nCols * nRows];
-    Imf::Rgba* n0pixels = new Imf::Rgba[nCols * nRows];
-    Imf::Rgba* n1pixels = new Imf::Rgba[nCols * nRows];
-    Imf::Rgba* p0pixels = new Imf::Rgba[nCols * nRows];
-    Imf::Rgba* p1pixels = new Imf::Rgba[nCols * nRows];
-    for (size_t i = 0; i < nRows; ++i) {
-      for (size_t j = 0; j < nCols; ++j) {
-        n0pixels[j * nRows + i] = Imf::Rgba(n0Mat[i][j].r, n0Mat[i][j].g, n0Mat[i][j].b, 1);
-        n1pixels[j * nRows + i] = Imf::Rgba(n1Mat[i][j].r, n1Mat[i][j].g, n1Mat[i][j].b, 1);
-        p0pixels[j * nRows + i] = Imf::Rgba(p0Mat[i][j].r, p0Mat[i][j].g, p0Mat[i][j].b, 1);
-        p1pixels[j * nRows + i] = Imf::Rgba(p1Mat[i][j].r, p1Mat[i][j].g, p1Mat[i][j].b, 1);
-        // Film and Lens position
-        filmPosPixels[j * nRows + i] = Imf::Rgba(filmPosMat[i][j].r, filmPosMat[i][j].g, 0, 1);
-        lensPosPixels[j * nRows + i] = Imf::Rgba(lensPosMat[i][j].r, lensPosMat[i][j].g, 0, 1);
-
-      }
-    }
-    Imf::RgbaOutputFile n0file(n0filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    n0file.setFrameBuffer(n0pixels, 1, nCols);
-    n0file.writePixels(nRows);
-    Imf::RgbaOutputFile n1file(n1filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    n1file.setFrameBuffer(n1pixels, 1, nCols);
-    n1file.writePixels(nRows);
-    Imf::RgbaOutputFile p0file(p0filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    p0file.setFrameBuffer(p0pixels, 1, nCols);
-    p0file.writePixels(nRows);
-    Imf::RgbaOutputFile p1file(p1filename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    p1file.setFrameBuffer(p1pixels, 1, nCols);
-    p1file.writePixels(nRows);
-    // Film and Lens position
-    Imf::RgbaOutputFile filmPosFile(filmPosFilename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    filmPosFile.setFrameBuffer(filmPosPixels, 1, nCols);
-    filmPosFile.writePixels(nRows);
-    Imf::RgbaOutputFile lensPosFile(lensPosFilename.c_str(), nCols, nRows, Imf::WRITE_RGBA);
-    lensPosFile.setFrameBuffer(lensPosPixels, 1, nCols);
-    lensPosFile.writePixels(nRows);
-
-    delete[] filmPosPixels;
-    delete[] lensPosPixels;
-    delete[] p0pixels;
-    delete[] p1pixels;
-    delete[] n0pixels;
-    delete[] n1pixels;
+    writeRGBMatrix(n0Mat, base_filename + "_I0_Normal.exr");
+    writeRGBMatrix(n1Mat, base_filename + "_I1_Normal.exr");
+    writeRGBMatrix(p0Mat, base_filename + "_I0_Position.exr");
+    writeRGBMatrix(p1Mat, base_filename + "_I1_Position.exr");
+    writeRGBMatrix(filmPosMat, base_filename + "_Film_Position.exr");
+    writeRGBMatrix(lensPosMat, base_filename + "_Lens_Position.exr");
   }
 
   RPFIntegrator::RPFIntegrator(
@@ -225,25 +104,29 @@ namespace pbrt {
 
   // Preprocess samples
   void RPFIntegrator::getStatsPerPixel(
-    const std::vector<std::vector<
-      std::vector<SampleFeatures>
-    >> &samples,
-    InfoVecMatrix &meanMatrix,
-    InfoVecMatrix &stdDevMatrix
+    const SampleDataSetMatrix &samples,
+    SampleFMatrix &meanMatrix,
+    SampleFMatrix &stdDevMatrix
   ) {
     size_t nRows = samples.size();
     size_t nCols = samples[0].size();
     size_t nSamples = samples[0][0].size();
     // Init matrices (nRows x nCols)
-    meanMatrix = InfoVecMatrix(nRows, std::vector<InfoVec>(nCols, InfoVec()));
-    stdDevMatrix = InfoVecMatrix(nRows, std::vector<InfoVec>(nCols, InfoVec()));
+    meanMatrix = SampleFMatrix(
+      nRows,
+      SampleFVector(nCols, SampleF())
+    );
+    stdDevMatrix = SampleFMatrix(
+      nRows,
+      SampleFVector(nCols, SampleF())
+    );
     // Calculate mean and stdDev for each pixel
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
         // Get mean and stdDev for each feature
-        std::vector<InfoVec> vectors;
-        for (const SampleFeatures &sf : samples[i][j]) {
-          vectors.push_back(sf.toInfoVec());
+        std::vector<SampleF> vectors;
+        for (const SampleData &sd : samples[i][j]) {
+          vectors.push_back(sd.toFeatureVector());
         }
         meanMatrix[i][j] = getMean(vectors);
         stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
@@ -251,32 +134,27 @@ namespace pbrt {
     }
   }
 
-  std::vector<std::vector<
-    std::vector<SampleFeatures>
-  >> RPFIntegrator::getNeighborhoodSamples(
-    const std::vector<std::vector<
-      std::vector<SampleFeatures>
-    >> &samples,
-    size_t box_size
+  SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
+    const SampleDataSetMatrix &samples,
+    const SampleFMatrix &meanMatrix,
+    const SampleFMatrix &stdDevMatrix,
+    size_t box_size // Always odd
   ) {
-    // GET STATS FOR EACH PIXEL
-    // Init matrices
-    auto meanMatrix = InfoVecMatrix();
-    auto stdDevMatrix = InfoVecMatrix();
-    // Get mean and stdDev for each pixel
-    getStatsPerPixel(samples, meanMatrix, stdDevMatrix);
     // COLLECT NEIGHBORHOOD SAMPLES THAT ARE WITHIN 3 STD DEVIATIONS
     size_t nRows = samples.size();
     size_t nCols = samples[0].size();
-    auto neighborhoodSamples = std::vector<std::vector<std::vector<SampleFeatures>>>();
+    auto b_delta = (box_size-1) / 2; // Assumes box_size is odd
+    auto neighborhoodSamples = SampleDataSetMatrix();
     for (size_t i = 0; i < nRows; ++i) {
-      std::vector<std::vector<SampleFeatures>> row;
+      SampleDataSetVector row;
       for (size_t j = 0; j < nCols; ++j) {
         // Current pixel (i, j). 
-        // Check all pixels within box_size (not including current pixel)
-        // Assumes box_size is odd
-        auto b_delta = (box_size-1) / 2;
-        auto neighborhood = std::vector<SampleFeatures>();
+        auto neighborhood = SampleDataSet();
+        // Push all of current pixel's to neighborhood
+        for (const SampleData &sf : samples[i][j]) {
+          neighborhood.push_back(sf);
+        }
+        // Check all pixels within box_size (not including current pixel). If within 3 std devs, add to neighborhood
         for (size_t x = i - b_delta; x <= i + b_delta; ++x) {
           for (size_t y = j - b_delta; y <= j + b_delta; ++y) {
             // Skip if current pixel
@@ -288,15 +166,14 @@ namespace pbrt {
               continue;
             }
             // Check each sample in pixel
-            for (const SampleFeatures &sf : samples[x][y]) {
+            for (const SampleData &sf : samples[x][y]) {
               // Check if all features are within 3 std deviations
-              bool within3StdDevs = true;
-              for (size_t k = 0; k < sf.toInfoVec().size(); ++k) {
-                if (std::abs(sf.toInfoVec()[k] - meanMatrix[i][j][k]) > 3 * stdDevMatrix[i][j][k]) {
-                  within3StdDevs = false;
-                  break;
-                }
-              }
+              auto sfVec = sf.toFeatureVector();
+              bool within3StdDevs = 
+                allLessThan(
+                  absArray(subtractArrays(sfVec, meanMatrix[i][j])),
+                  multiplyArray(stdDevMatrix[i][j], 3) // 3 std devs
+                );
               if (within3StdDevs) {
                 neighborhood.push_back(sf);
               }
@@ -319,11 +196,11 @@ namespace pbrt {
     Vector2i sampleExtent = sampleBounds.Diagonal();
     ProgressReporter reporter(sampleExtent.x*sampleExtent.y, "Rendering");
     // Allocate 3D matrix of samples
-    std::vector<std::vector<std::vector<SampleFeatures>>> samples(
+    SampleDataSetMatrix samples(
       sampleExtent.x,
-      std::vector<std::vector<SampleFeatures>>(
+      SampleDataSetVector(
         sampleExtent.y,
-        std::vector<SampleFeatures>()
+        SampleDataSet()
       )
     );
     { 
@@ -354,7 +231,7 @@ namespace pbrt {
           ray.ScaleDifferentials(1 / std::sqrt((Float)sampler->samplesPerPixel));
           ++nCameraRays;
           // Evaluate radiance along camera ray and capture Features
-          SampleFeatures sf(
+          SampleData sf(
             cameraSample.pFilm, // Film position
             cameraSample.pLens, // Lens position
             0.f ,                // L (placeholder)
@@ -372,8 +249,15 @@ namespace pbrt {
     }
     LOG(INFO) << "Finished sampling pixels" << sampleBounds;
     // Write FeatureVector data to file
-    writeSFMat(samples, camera->film->filename);
+    visualizeSD(samples, camera->film->filename);
 
+    // Get mean and stdDev for each pixel
+    SampleFMatrix meanMatrix;
+    SampleFMatrix stdDevMatrix;
+    getStatsPerPixel(samples, meanMatrix, stdDevMatrix);
+
+    // Create Neighbourhood
+    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(samples, meanMatrix, stdDevMatrix, 3);
 
     // PREPROCESSING THE SAMPLES
     // To do this, we compute the average feature vector m{f,p} and the
@@ -381,28 +265,6 @@ namespace pbrt {
     // vector for the set of samples P at the current pixel. We then cre-
     // ate our neighborhood N using only samples whose features are all
     // within 3 standard deviations of the mean for the pixel
-    // Get Neighborhood samples
-    auto neighborhoodSamples = getNeighborhoodSamples(samples, 3);
-    // COUT STATS: min, max and average number of samples in the neighborhood
-    size_t minSamples = std::numeric_limits<size_t>::max();
-    size_t maxSamples = 0;
-    size_t totalSamples = 0;
-    for (size_t i = 0; i < sampleExtent.x; ++i) {
-      for (size_t j = 0; j < sampleExtent.y; ++j) {
-        size_t nSamples = neighborhoodSamples[i][j].size();
-        minSamples = std::min(minSamples, nSamples);
-        maxSamples = std::max(maxSamples, nSamples);
-        totalSamples += nSamples;
-      }
-    };
-
-    minNeighborhoodSize = minSamples;
-    maxNeighborhoodSize = maxSamples;
-    meanNeighborhoodSize = totalSamples / (sampleExtent.x * sampleExtent.y);
-    emptyNeighborhoods = minSamples == 0 ? 1 : 0;
-    
-
-
     // 1. Clustering
     // 2. Normalization
 
@@ -432,7 +294,7 @@ namespace pbrt {
     double numSamples = 0;
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
-        for (const SampleFeatures &sf : samples[x][y]) {
+        for (const SampleData &sf : samples[x][y]) {
           filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
         }
         numSamples += samples[x][y].size();
@@ -454,7 +316,7 @@ namespace pbrt {
   void RPFIntegrator::Li(
     const RayDifferential &r, const Scene &scene,
     Sampler &sampler, MemoryArena &arena,
-    SampleFeatures &sf,
+    SampleData &sf,
     int depth
   ) const {
 

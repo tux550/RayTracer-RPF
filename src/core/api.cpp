@@ -60,7 +60,7 @@
 #include "integrators/sppm.h"
 #include "integrators/volpath.h"
 #include "integrators/whitted.h"
-#include "integrators/rpf.h"
+#include "custom/rpf.h"
 #include "lights/diffuse.h"
 #include "lights/distant.h"
 #include "lights/goniometric.h"
