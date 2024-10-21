@@ -110,7 +110,7 @@ namespace pbrt {
   }
 
   // Preprocess samples
-  void RPFIntegrator::getStatsPerPixel(
+  void RPFIntegrator::getFStatsPerPixel(
     const SampleDataSetMatrix &samples,
     SampleFMatrix &meanMatrix,
     SampleFMatrix &stdDevMatrix
@@ -134,6 +134,37 @@ namespace pbrt {
         std::vector<SampleF> vectors;
         for (const SampleData &sd : samples[i][j]) {
           vectors.push_back(sd.getFeatures());
+        }
+        meanMatrix[i][j] = getMean(vectors);
+        stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
+      }
+    }
+  }
+
+  void RPFIntegrator::getAStatsPerPixel(
+    const SampleDataSetMatrix &samples,
+    SampleAMatrix &meanMatrix,
+    SampleAMatrix &stdDevMatrix
+  ) {
+    size_t nRows = samples.size();
+    size_t nCols = samples[0].size();
+    size_t nSamples = samples[0][0].size();
+    // Init matrices (nRows x nCols)
+    meanMatrix = SampleAMatrix(
+      nRows,
+      SampleAVector(nCols, SampleA())
+    );
+    stdDevMatrix = SampleAMatrix(
+      nRows,
+      SampleAVector(nCols, SampleA())
+    );
+    // Calculate mean and stdDev for each pixel
+    for (size_t i = 0; i < nRows; ++i) {
+      for (size_t j = 0; j < nCols; ++j) {
+        // Get mean and stdDev for each feature
+        std::vector<SampleA> vectors;
+        for (const SampleData &sd : samples[i][j]) {
+          vectors.push_back(sd.getFullArray());
         }
         meanMatrix[i][j] = getMean(vectors);
         stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
@@ -258,13 +289,7 @@ namespace pbrt {
     // Write FeatureVector data to file
     visualizeSD(samples, camera->film->filename);
 
-    // Get mean and stdDev for each pixel
-    SampleFMatrix meanMatrix;
-    SampleFMatrix stdDevMatrix;
-    getStatsPerPixel(samples, meanMatrix, stdDevMatrix);
 
-    // Create Neighbourhood
-    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(samples, meanMatrix, stdDevMatrix, 3);
 
     // PREPROCESSING THE SAMPLES
     // To do this, we compute the average feature vector m{f,p} and the
@@ -272,8 +297,42 @@ namespace pbrt {
     // vector for the set of samples P at the current pixel. We then cre-
     // ate our neighborhood N using only samples whose features are all
     // within 3 standard deviations of the mean for the pixel
+
+
+
     // 1. Clustering
+    // Get FEATURES mean and stdDev for each pixel
+    SampleFMatrix FmeanMatrix;
+    SampleFMatrix FstdDevMatrix;
+    getFStatsPerPixel(samples, FmeanMatrix, FstdDevMatrix);
+
+    // Create Neighbourhood
+    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(samples, FmeanMatrix, FstdDevMatrix, 3);
+
+
     // 2. Normalization
+    // Get X mean and stdDev for each pixel
+    SampleAMatrix XmeanMatrix;
+    SampleAMatrix XstdDevMatrix;
+    getAStatsPerPixel(neighborhoodSamples, XmeanMatrix, XstdDevMatrix);
+
+    // Normalize
+    SampleDataSetMatrix normalizedSamples;
+    for (size_t i = 0; i < sampleExtent.x; ++i) {
+      SampleDataSetVector row;
+      for (size_t j = 0; j < sampleExtent.y; ++j) {
+        SampleDataSet dataset;
+        for (const SampleData &sf : samples[i][j]) {
+          dataset.push_back(sf.normalized(XmeanMatrix[i][j], XstdDevMatrix[i][j]));
+        }
+        row.push_back(dataset);
+      }
+      normalizedSamples.push_back(row);
+    }
+
+
+
+
 
     // STATISTICAL DEPENDENCY ESTIMATION
     // 1. joint mutual information for each feature and random parameter
@@ -302,7 +361,7 @@ namespace pbrt {
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sf : samples[x][y]) {
-          filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight);
+          filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight); // AddSplat instead
           //filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
         }
         numSamples += samples[x][y].size();

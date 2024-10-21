@@ -27,9 +27,14 @@ typedef std::array<double, 2> SampleR;
 // SampleColor: L
 typedef std::array<double, 3> SampleC;
 
+// Types
+typedef std::array<double, 19> SampleFullArray;
+typedef SampleFullArray SampleA;
+typedef std::vector<SampleFullArray> SampleAVector;
+typedef std::vector<SampleAVector> SampleAMatrix;
+
 struct SampleData {
-  // Types
-  typedef std::array<double, 19> SampleFullArray;
+
   // Data regions: 
   // SCREEN POSITION: pFilm
   // COLORS: L
@@ -148,6 +153,16 @@ struct SampleData {
   // Set from full array
   void setFullArray(const SampleFullArray &fullArray) {
     data = fullArray;
+  }
+
+  // Normalize
+  SampleData normalized(const SampleFullArray &mean, const SampleFullArray &stdDev) const {
+    SampleData normalizedData;
+    for (int i = 0; i < 19; i++) {
+      normalizedData.data[i] = (data[i] - mean[i]) / stdDev[i];
+    }
+    normalizedData.rayWeight = rayWeight;
+    return normalizedData;
   }
 };
 

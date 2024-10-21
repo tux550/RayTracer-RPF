@@ -58,11 +58,19 @@ class RPFIntegrator : public Integrator {
     std::shared_ptr<Sampler> sampler;
     const Bounds2i pixelBounds;
     // Utility functions
-    void getStatsPerPixel(
+    void getFStatsPerPixel(
       const SampleDataSetMatrix &samples,
       SampleFMatrix &meanMatrix,
       SampleFMatrix &stdDevMatrix
     );
+
+    void getAStatsPerPixel(
+      const SampleDataSetMatrix &samples,
+      SampleAMatrix &meanMatrix,
+      SampleAMatrix &stdDevMatrix
+    );
+
+    
 
     SampleDataSetMatrix getNeighborhoodSamples(
       const SampleDataSetMatrix &samples,
