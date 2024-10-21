@@ -1,3 +1,11 @@
+#if defined(_MSC_VER)
+#define NOMINMAX
+#pragma once
+#endif
+
+#ifndef PBRT_VISUALIZATION_H
+#define PBRT_VISUALIZATION_H
+
 #include <ImfRgbaFile.h>
 #include <ImfArray.h>
 #include <vector>
@@ -57,3 +65,5 @@ struct BasicRGB {
 
 
 }
+
+#endif // PBRT_VISUALIZATION_H

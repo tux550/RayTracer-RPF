@@ -15,3 +15,5 @@ build-image:
 	docker build -t $(IMAGE_TAG) .
 shell:
 	docker run -it --rm -w $(CONTAINER_WORK_DIR) -v $(HOST_OUTPUT_DIR):$(CONTAINER_OUTPUT_DIR) $(IMAGE_TAG)  /bin/bash
+clean:
+	rm -rf output/*.exr
