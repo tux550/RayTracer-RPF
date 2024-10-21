@@ -110,59 +110,28 @@ namespace pbrt {
   }
 
   // Preprocess samples
-  void RPFIntegrator::getFStatsPerPixel(
+  void RPFIntegrator::getXStatsPerPixel(
     const SampleDataSetMatrix &samples,
-    SampleFMatrix &meanMatrix,
-    SampleFMatrix &stdDevMatrix
+    SampleXMatrix &meanMatrix,
+    SampleXMatrix &stdDevMatrix
   ) {
     size_t nRows = samples.size();
     size_t nCols = samples[0].size();
     size_t nSamples = samples[0][0].size();
     // Init matrices (nRows x nCols)
-    meanMatrix = SampleFMatrix(
+    meanMatrix = SampleXMatrix(
       nRows,
-      SampleFVector(nCols, SampleF())
+      SampleXVector(nCols, SampleX())
     );
-    stdDevMatrix = SampleFMatrix(
+    stdDevMatrix = SampleXMatrix(
       nRows,
-      SampleFVector(nCols, SampleF())
-    );
-    // Calculate mean and stdDev for each pixel
-    for (size_t i = 0; i < nRows; ++i) {
-      for (size_t j = 0; j < nCols; ++j) {
-        // Get mean and stdDev for each feature
-        std::vector<SampleF> vectors;
-        for (const SampleData &sd : samples[i][j]) {
-          vectors.push_back(sd.getFeatures());
-        }
-        meanMatrix[i][j] = getMean(vectors);
-        stdDevMatrix[i][j] = getStdDev(vectors, meanMatrix[i][j]);
-      }
-    }
-  }
-
-  void RPFIntegrator::getAStatsPerPixel(
-    const SampleDataSetMatrix &samples,
-    SampleAMatrix &meanMatrix,
-    SampleAMatrix &stdDevMatrix
-  ) {
-    size_t nRows = samples.size();
-    size_t nCols = samples[0].size();
-    size_t nSamples = samples[0][0].size();
-    // Init matrices (nRows x nCols)
-    meanMatrix = SampleAMatrix(
-      nRows,
-      SampleAVector(nCols, SampleA())
-    );
-    stdDevMatrix = SampleAMatrix(
-      nRows,
-      SampleAVector(nCols, SampleA())
+      SampleXVector(nCols, SampleX())
     );
     // Calculate mean and stdDev for each pixel
     for (size_t i = 0; i < nRows; ++i) {
       for (size_t j = 0; j < nCols; ++j) {
         // Get mean and stdDev for each feature
-        std::vector<SampleA> vectors;
+        std::vector<SampleX> vectors;
         for (const SampleData &sd : samples[i][j]) {
           vectors.push_back(sd.getFullArray());
         }
@@ -302,45 +271,67 @@ namespace pbrt {
 
     // 1. Clustering
     // Get FEATURES mean and stdDev for each pixel
-    SampleFMatrix FmeanMatrix;
-    SampleFMatrix FstdDevMatrix;
-    getFStatsPerPixel(samples, FmeanMatrix, FstdDevMatrix);
+    SampleXMatrix pixelMeanMatrix;
+    SampleXMatrix pixelStdDevMatrix;
+    getXStatsPerPixel(
+      samples,
+      pixelMeanMatrix,
+      pixelStdDevMatrix
+    );
+    SampleFMatrix pixelFmeanMatrix = XtoFMatrix(pixelMeanMatrix);
+    SampleFMatrix pixelFstdDevMatrix = XtoFMatrix(pixelStdDevMatrix);
 
     // Create Neighbourhood
-    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(samples, FmeanMatrix, FstdDevMatrix, 3);
+    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(
+      samples,
+      pixelFmeanMatrix,
+      pixelFstdDevMatrix,
+      3
+    );
 
 
     // 2. Normalization
     // Get X mean and stdDev for each pixel
-    SampleAMatrix XmeanMatrix;
-    SampleAMatrix XstdDevMatrix;
-    getAStatsPerPixel(neighborhoodSamples, XmeanMatrix, XstdDevMatrix);
-
+    SampleXMatrix neighborhoodMeanMatrix;
+    SampleXMatrix neighborhoodStdDevMatrix;
+    getXStatsPerPixel(
+      neighborhoodSamples,
+      neighborhoodMeanMatrix,
+      neighborhoodStdDevMatrix
+    );
     // Normalize
-    SampleDataSetMatrix normalizedSamples;
-    for (size_t i = 0; i < sampleExtent.x; ++i) {
-      SampleDataSetVector row;
-      for (size_t j = 0; j < sampleExtent.y; ++j) {
-        SampleDataSet dataset;
-        for (const SampleData &sf : samples[i][j]) {
-          dataset.push_back(sf.normalized(XmeanMatrix[i][j], XstdDevMatrix[i][j]));
-        }
-        row.push_back(dataset);
-      }
-      normalizedSamples.push_back(row);
-    }
+    SampleDataSetMatrix normSamples = normalizedSamples(
+      neighborhoodSamples,
+      neighborhoodMeanMatrix,
+      neighborhoodStdDevMatrix
+    );
 
 
 
 
 
     // STATISTICAL DEPENDENCY ESTIMATION
-    // 1. joint mutual information for each feature and random parameter
-    // 2. calculate filter weights alpha and beta for each feature
-    // 3. calculate mutual information
+    // 1. Mutual Information between Feature k and RandomParameter l using the samples in each Neighborhood
+
+    // 2. Calculate filter weights alpha and beta for each feature
+    // > Calculate Dependency of Feature/Color/Position k on All Random Parameters
+    // > Calculate Dependency of Color k on All Features
+    // > Calculate how all color channels depend on Feature k
+    // > Calculate Drc Dpc and Dfc
+
+    // 3. Compute Fractional Contributions
+    // Wrfk = Drfk / (Drfk + Dpfk)
+    // Wrck = Drck / (Drck + Dpck)
+    // Wrc  = 1/3 (Wrc1 + Wrc2 + Wrc3)
+    // Wfkc = Dfkc / (Drc + Dpc + Dfc)
+
+    // 4. Compute Filter Weights
+    // alpha = 1- Wrck
+    // beta = Wfkc ( 1 - Wrfk )
 
     // FILTERING THE SAMPLES
-
+    // > calc wij
+    // > Blend samples
 
 
 

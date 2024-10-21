@@ -8,6 +8,7 @@
 
 #include <array>
 #include <vector>
+#include "custom/ops.h"
 #include "pbrt.h"
 #include "geometry.h"
 #include "spectrum.h"
@@ -29,9 +30,9 @@ typedef std::array<double, 3> SampleC;
 
 // Types
 typedef std::array<double, 19> SampleFullArray;
-typedef SampleFullArray SampleA;
-typedef std::vector<SampleFullArray> SampleAVector;
-typedef std::vector<SampleAVector> SampleAMatrix;
+typedef SampleFullArray SampleX;
+typedef std::vector<SampleFullArray> SampleXVector;
+typedef std::vector<SampleXVector> SampleXMatrix;
 
 struct SampleData {
 
@@ -43,7 +44,7 @@ struct SampleData {
   // Other? rayWeight 
   SampleFullArray data;
   Float rayWeight;
-
+  // === SETTERS ===
   void setPFilm(const Point2f &pFilm) {
     data[0] = pFilm.x;
     data[1] = pFilm.y;
@@ -85,7 +86,12 @@ struct SampleData {
     return Point2f(data[5], data[6]);
   }
   Spectrum getL() const {
-    Float rgb[3] = {data[2], data[3], data[4]};
+    // Fix: float casting
+    Float rgb[3] = {
+      data[2],
+      data[3],
+      data[4]
+    };
     return Spectrum::FromRGB(rgb);
   }
   Normal3f getN0() const {
@@ -126,41 +132,75 @@ struct SampleData {
     };
 
   //  == EXTRACT SECTIONS ==
+  static SampleF getFeatures(const SampleFullArray &fullArray) {
+    SampleF features;
+    for (int i = 0; i < 12; i++) {
+      features[i] = fullArray[i + 7];
+    }
+    return features;
+  }
   SampleF getFeatures() const {
-    return {
-      data[7], data[8], data[9], // n0
-      data[10], data[11], data[12], // p0
-      data[13], data[14], data[15], // n1
-      data[16], data[17], data[18] // p1
-    };
+    return getFeatures(data);
+  }
+  void setFeatures(const SampleF &features) {
+    for (int i = 0; i < 12; i++) {
+      data[i + 7] = features[i];
+    }
   }
 
+  static SampleP getPosition(const SampleFullArray &fullArray) {
+    return {fullArray[0], fullArray[1]};
+  }
   SampleP getPosition() const {
-    return {data[0], data[1]};
+    return getPosition(data);
+  }
+  void setPosition(const SampleP &position) {
+    data[0] = position[0];
+    data[1] = position[1];
   }
 
+  static SampleR getRandom(const SampleFullArray &fullArray) {
+    return {fullArray[5], fullArray[6]};
+  }
   SampleR getRandom() const {
-    return {data[5], data[6]};
+    return getRandom(data);
+  }
+  void setRandom(const SampleR &random) {
+    data[5] = random[0];
+    data[6] = random[1];
   }
 
+  static SampleC getColor(const SampleFullArray &fullArray) {
+    return {fullArray[2], fullArray[3], fullArray[4]};
+  }
   SampleC getColor() const {
-    return {data[2], data[3], data[4]};
+    return getColor(data);
+  }
+  void setColor(const SampleC &color) {
+    data[2] = color[0];
+    data[3] = color[1];
+    data[4] = color[2];
   }
 
+  // === FULL ARRAY ===
   SampleFullArray getFullArray() const {
     return data;
   }
-  // Set from full array
   void setFullArray(const SampleFullArray &fullArray) {
     data = fullArray;
   }
 
-  // Normalize
-  SampleData normalized(const SampleFullArray &mean, const SampleFullArray &stdDev) const {
+  // === UTILITY ===
+  // Normalize using mean and stdDev
+  SampleData normalized(
+    const SampleFullArray &mean,
+    const SampleFullArray &stdDev
+  ) const {
     SampleData normalizedData;
-    for (int i = 0; i < 19; i++) {
-      normalizedData.data[i] = (data[i] - mean[i]) / stdDev[i];
-    }
+    normalizedData.data = divideArrays(
+      subtractArrays(data, mean),
+      stdDev
+    );
     normalizedData.rayWeight = rayWeight;
     return normalizedData;
   }
@@ -170,6 +210,14 @@ struct SampleData {
 typedef std::vector<SampleData> SampleDataSet;
 typedef std::vector<SampleDataSet> SampleDataSetVector;
 typedef std::vector<std::vector<SampleDataSet>> SampleDataSetMatrix;
+
+SampleFMatrix XtoFMatrix(const SampleXMatrix &XMatrix);
+
+SampleDataSetMatrix normalizedSamples(
+  const SampleDataSetMatrix &samples,
+  const SampleXMatrix &meanMatrix,
+  const SampleXMatrix &stdDevMatrix
+);
 
 }  // namespace pbrt
 
