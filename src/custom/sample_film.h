@@ -38,6 +38,10 @@ struct SamplingFilm {
 
   void MergeSamplingTile(std::unique_ptr<SamplingTile> tile);
 
+  int getWidth() const;
+  int getHeight() const;
+
+  SampleDataSet getPixelSamples(const Point2i &pixel) const;
 };
 
 

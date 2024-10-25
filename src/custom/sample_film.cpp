@@ -64,4 +64,19 @@ namespace pbrt {
       }
     }
   }
+
+  int SamplingFilm::getWidth() const {
+    return pixelBounds.Diagonal().x;
+  }
+
+  int SamplingFilm::getHeight() const {
+    return pixelBounds.Diagonal().y;
+  }
+
+  SampleDataSet SamplingFilm::getPixelSamples(const Point2i &pixel) const {
+    // Get adjusted x and y coordinates
+    auto adjustedX = pixel.x - pixelBounds.pMin.x;
+    auto adjustedY = pixel.y - pixelBounds.pMin.y;
+    return samples[adjustedX][adjustedY];
+  }
 } // namespace pbrt

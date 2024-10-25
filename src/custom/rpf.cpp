@@ -216,7 +216,7 @@ namespace pbrt {
       (sampleExtent.y + tileSize - 1) / tileSize
     );
     // Progress reporter
-    ProgressReporter reporter_sampling(sampleExtent.x*sampleExtent.y, "Sampling");
+    ProgressReporter reporter_sampling(nTiles.x * nTiles.y, "Sampling");
     {
       ParallelFor2D([&](Point2i tile) {
         // Allocate
@@ -299,28 +299,50 @@ namespace pbrt {
     // within 3 standard deviations of the mean for the pixel
 
 
-    /*
+    
     // 1. Clustering
     // Get FEATURES mean and stdDev for each pixel
-    SampleXMatrix pixelMeanMatrix;
-    SampleXMatrix pixelStdDevMatrix;
-    getXStatsPerPixel(
-      samples,
-      pixelMeanMatrix,
-      pixelStdDevMatrix
+    SampleFMatrix pixelFmeanMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
     );
-    SampleFMatrix pixelFmeanMatrix = XtoFMatrix(pixelMeanMatrix);
-    SampleFMatrix pixelFstdDevMatrix = XtoFMatrix(pixelStdDevMatrix);
+    SampleFMatrix pixelFstdDevMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
+    );;
+    ProgressReporter reporter_fstats(nTiles.x * nTiles.y, "Features Mean and StdDev");
+    {
+      ParallelFor2D([&](Point2i pixel) {
+        // Compute sample bounds for tile
+        int x0 = sampleBounds.pMin.x + pixel.x;
+        int x1 = std::min(x0 + 1, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + pixel.y;
+        int y1 = std::min(y0 + 1, sampleBounds.pMax.y);
+        Bounds2i pixelBounds(Point2i(x0, y0), Point2i(x1, y1));
 
+        // Loop
+        for (Point2i pixel : pixelBounds) {
+          // Get samples for pixel
+          SampleDataSet samples = samplingFilm.getPixelSamples(pixel);
+          // Get mean and stdDev for each feature
+          std::vector<SampleF> vectors;
+          for (const SampleData &sd : samples) {
+            vectors.push_back(sd.getFeatures());
+          }
+          pixelFmeanMatrix[pixel.x][pixel.y] = getMean(vectors);
+          pixelFstdDevMatrix[pixel.x][pixel.y] = getStdDev(vectors, pixelFmeanMatrix[pixel.x][pixel.y]);
+        }
+      }, nTiles);
+      reporter_fstats.Done();
+    }
     // Create Neighbourhood
     SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(
-      samples,
+      samplingFilm.samples,
       pixelFmeanMatrix,
       pixelFstdDevMatrix,
       3
     );
     
-
     // 2. Normalization
     // Get X mean and stdDev for each pixel
     SampleXMatrix neighborhoodMeanMatrix;
@@ -336,8 +358,7 @@ namespace pbrt {
       neighborhoodMeanMatrix,
       neighborhoodStdDevMatrix
     );
-    */
-
+    
 
 
 
