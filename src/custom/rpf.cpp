@@ -298,10 +298,10 @@ namespace pbrt {
     // ate our neighborhood N using only samples whose features are all
     // within 3 standard deviations of the mean for the pixel
 
-
-    
     // 1. Clustering
-    // Get FEATURES mean and stdDev for each pixel
+
+
+    // 1.1 Get FEATURES mean and stdDev for each pixel
     SampleFMatrix pixelFmeanMatrix(
       samplingFilm.getWidth(),
       SampleFVector(samplingFilm.getHeight(), SampleF())
@@ -335,30 +335,93 @@ namespace pbrt {
       }, nTiles);
       reporter_fstats.Done();
     }
+
+    // 1.2 Build Neighborhood and 1.3 Normalize
+
     // Create Neighbourhood
-    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(
-      samplingFilm.samples,
-      pixelFmeanMatrix,
-      pixelFstdDevMatrix,
-      3
+    SampleDataSetMatrix neighborhoodSamples(
+      samplingFilm.getWidth(),
+      SampleDataSetVector(samplingFilm.getHeight(), SampleDataSet())
     );
+    int box_size = 3;
+    ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "BuildNeighborhood And Normalize");
+    {
+      ParallelFor2D([&](Point2i pixel) {
+        // Compute sample bounds for tile
+        int x0 = sampleBounds.pMin.x + pixel.x;
+        int x1 = std::min(x0 + 1, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + pixel.y;
+        int y1 = std::min(y0 + 1, sampleBounds.pMax.y);
+        Bounds2i pixelBounds(Point2i(x0, y0), Point2i(x1, y1));
+        // Loop
+        for (Point2i pixel : pixelBounds) {
+          // Init with pixel samples
+          auto neighborhood = samplingFilm.getPixelSamples(pixel);
+          // Get surrounding pixels
+          auto b_delta = (box_size-1) / 2; // Assumes box_size is odd
+          for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta; ++xn) {
+            for (int yn = pixel.y - b_delta; yn <= pixel.y + b_delta; ++yn) {
+              // Skip if current pixel
+              if (xn == pixel.x && yn == pixel.y) {
+                continue;
+              }
+              // If pixel is outside bounds, skip
+              if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x || yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
+                continue;
+              }
+              // Check each sample in pixel
+              for (const SampleData &sf : samplingFilm.getPixelSamples( Point2i(xn, yn) )) {
+                // Check if all features are within 3 std deviations
+                auto sfVec = sf.getFeatures();
+                bool within3StdDevs = 
+                  allLessThan(
+                    absArray(subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y])),
+                    multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y], 3) // 3 std devs
+                  );
+                if (within3StdDevs) {
+                  neighborhood.push_back(sf);
+                }
+              }
+            }
+          }
+
+          // Normalize Neighborhood
+          if (neighborhood.size() > 0) {
+            // Get mean and stdDev for the full array
+            std::vector<SampleX> vectors;
+            for (const SampleData &sd : neighborhood) {
+              vectors.push_back(sd.getFullArray());
+            }
+            auto mean = getMean(vectors);
+            auto stdDev = getStdDev(vectors, mean);
+            // Normalize
+            for (auto it = neighborhood.begin(); it != neighborhood.end(); ++it) {
+              *it = it->normalized(mean, stdDev);
+            }
+          }
+
+          // Set neighborhood
+          neighborhoodSamples[pixel.x][pixel.y] = neighborhood;
+        }
+      }, nTiles);
+      reporter_build_neighborhood.Done();
+    }
     
-    // 2. Normalization
-    // Get X mean and stdDev for each pixel
-    SampleXMatrix neighborhoodMeanMatrix;
-    SampleXMatrix neighborhoodStdDevMatrix;
-    getXStatsPerPixel(
-      neighborhoodSamples,
-      neighborhoodMeanMatrix,
-      neighborhoodStdDevMatrix
-    );
-    // Normalize
-    SampleDataSetMatrix normSamples = normalizedSamples(
-      neighborhoodSamples,
-      neighborhoodMeanMatrix,
-      neighborhoodStdDevMatrix
-    );
-    
+    // Get stats of neighborhood sizes
+    int maxNSize = 0;
+    int minNSize = std::numeric_limits<int>::max();
+    int totalNSize = 0;
+    for (const auto &row : neighborhoodSamples) {
+      for (const auto &neighborhood : row) {
+        int nSize = neighborhood.size();
+        maxNSize = std::max(maxNSize, nSize);
+        minNSize = std::min(minNSize, nSize);
+        totalNSize += nSize;
+      }
+    }
+    maxNeighborhoodSize = maxNSize;
+    minNeighborhoodSize = minNSize;
+    meanNeighborhoodSize = totalNSize / (samplingFilm.getWidth() * samplingFilm.getHeight());
 
 
 
