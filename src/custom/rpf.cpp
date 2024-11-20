@@ -1,6 +1,7 @@
 
 // custom/rpf.cpp*
 #include "custom/rpf.h"
+
 #include "bssrdf.h"
 #include "camera.h"
 #include "film.h"
@@ -16,17 +17,19 @@
 
 namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
-  STAT_COUNTER("Integrator/MaxNeighborhoodSize", maxNeighborhoodSize);
-  STAT_COUNTER("Integrator/MeanNeighborhoodSize", meanNeighborhoodSize);
-  STAT_COUNTER("Integrator/MinNeighborhoodSize", minNeighborhoodSize);
+  STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
+  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size Pre Merge", neighborhoodSizePreMerge);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
 
   
-  void visualizeSD(
-    const SampleDataSetMatrix &sdMat,
+  void visualizeSF(
+    const SamplingFilm &sampling_film,
     const std::string &filename) {
+
+    auto sdMat = sampling_film.samples;
 
     // Remove any extension from filename
     std::string base_filename = filename;
@@ -199,64 +202,98 @@ namespace pbrt {
 
   // Render
   void RPFIntegrator::Render(const Scene &scene) {  
+    // Get bounds
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
-    ProgressReporter reporter(sampleExtent.x*sampleExtent.y, "Rendering");
-    // Allocate 3D matrix of samples
-    SampleDataSetMatrix samples(
-      sampleExtent.x,
-      SampleDataSetVector(
-        sampleExtent.y,
-        SampleDataSet()
-      )
-    );
-    { 
-      // Allocate _MemoryArena_
-      MemoryArena arena;
-      // Compute sample bounds for tile
-      int x0 = sampleBounds.pMin.x;
-      int x1 = sampleBounds.pMax.x;
-      int y0 = sampleBounds.pMin.y;
-      int y1 = sampleBounds.pMax.y;
-      // Loop over pixels to render them
-      for (Point2i pixel : sampleBounds) {
-        // Init pixel
-        {
-          ProfilePhase pp(Prof::StartPixel);
-          sampler->StartPixel(pixel);
-        }
-        // For RNG reproducibility
-        if (!InsideExclusive(pixel, pixelBounds))
-          continue;
 
-        do {
-          // Initialize _CameraSample_ for current sample
-          CameraSample cameraSample = sampler->GetCameraSample(pixel);
-          // Generate camera ray for current sample
-          RayDifferential ray;
-          Float rayWeight = camera->GenerateRayDifferential(cameraSample, &ray);
-          ray.ScaleDifferentials(1 / std::sqrt((Float)sampler->samplesPerPixel));
-          ++nCameraRays;
-          // Evaluate radiance along camera ray and capture Features
-          SampleData sf(
-            cameraSample.pFilm, // Film position
-            cameraSample.pLens, // Lens position
-            0.f ,                // L (placeholder)
-            rayWeight           // Ray weight
-          );
-          if (rayWeight > 0) {
-            // Evaluate radiance along camera ray
-            Li(ray, scene, *sampler, arena, sf);
+    // Init SamplingFilm
+    SamplingFilm samplingFilm(sampleBounds);
+
+    // Divide into tiles
+    const int tileSize = 16;
+    Point2i nTiles(
+      (sampleExtent.x + tileSize - 1) / tileSize,
+      (sampleExtent.y + tileSize - 1) / tileSize
+    );
+    // Progress reporter
+    ProgressReporter reporter_sampling(nTiles.x * nTiles.y, "Sampling");
+    {
+      ParallelFor2D([&](Point2i tile) {
+        // Allocate
+        MemoryArena arena;
+
+        // Get sampler instance for tile
+        int seed = tile.y * nTiles.x + tile.x;
+        std::unique_ptr<Sampler> tileSampler = sampler->Clone(seed);
+
+        // Compute sample bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+        LOG(INFO) << "Starting image tile " << tileBounds;
+
+        // Get SamplingTile for tile
+        std::unique_ptr<SamplingTile> samplingTile = samplingFilm.GetSamplingTile(tileBounds);
+
+        // Loop over pixels in tile to render them
+        for (Point2i pixel : tileBounds) {
+          // Init pixel
+          {
+            ProfilePhase pp(Prof::StartPixel);
+            tileSampler->StartPixel(pixel);
           }
-          samples[pixel.x][pixel.y].push_back(sf);
-          // Free _MemoryArena_ memory from computing image sample value
-          arena.Reset();
-        } while (sampler->StartNextSample());        
+          // For RNG reproducibility
+          if (!InsideExclusive(pixel, pixelBounds))
+            continue;
+
+          do {
+            // Initialize _CameraSample_ for current sample
+            CameraSample cameraSample = tileSampler->GetCameraSample(pixel);
+            // Generate camera ray for current sample
+            RayDifferential ray;
+            Float rayWeight = camera->GenerateRayDifferential(cameraSample, &ray);
+            ray.ScaleDifferentials(1 / std::sqrt((Float)tileSampler->samplesPerPixel));
+            ++nCameraRays;
+            // Evaluate radiance along camera ray and capture Features
+            SampleData sf(
+              cameraSample.pFilm, // Film position
+              cameraSample.pLens, // Lens position
+              0.f ,                // L (placeholder)
+              rayWeight           // Ray weight
+            );
+            if (rayWeight > 0) {
+              // Evaluate radiance along camera ray
+              Li(ray, scene, *tileSampler, arena, sf);
+            }
+            samplingTile->addSample(pixel, sf);
+
+            // Free _MemoryArena_ memory from computing image sample value
+            arena.Reset();
+
+          } while (tileSampler->StartNextSample());
+        }
+        LOG(INFO) << "Finished sampling tile " << tileBounds;
+
+        // Merge image tile into _SamplingFilm_
+        samplingFilm.MergeSamplingTile(std::move(samplingTile));
+      }, nTiles);
+      reporter_sampling.Done();
+    }
+    LOG(INFO) << "Sampling finished";
+
+    for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
+      for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
+        ReportValue(samplesPerPixel, samplingFilm.samples[i][j].size());
       }
     }
-    LOG(INFO) << "Finished sampling pixels" << sampleBounds;
+
     // Write FeatureVector data to file
-    visualizeSD(samples, camera->film->filename);
+    visualizeSF(
+      samplingFilm,
+      camera->film->filename
+    );
 
 
 
@@ -267,46 +304,129 @@ namespace pbrt {
     // ate our neighborhood N using only samples whose features are all
     // within 3 standard deviations of the mean for the pixel
 
-
-
     // 1. Clustering
-    // Get FEATURES mean and stdDev for each pixel
-    SampleXMatrix pixelMeanMatrix;
-    SampleXMatrix pixelStdDevMatrix;
-    getXStatsPerPixel(
-      samples,
-      pixelMeanMatrix,
-      pixelStdDevMatrix
+
+
+    // 1.1 Get FEATURES mean and stdDev for each pixel
+    SampleFMatrix pixelFmeanMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
     );
-    SampleFMatrix pixelFmeanMatrix = XtoFMatrix(pixelMeanMatrix);
-    SampleFMatrix pixelFstdDevMatrix = XtoFMatrix(pixelStdDevMatrix);
-
-    // Create Neighbourhood
-    SampleDataSetMatrix neighborhoodSamples = getNeighborhoodSamples(
-      samples,
-      pixelFmeanMatrix,
-      pixelFstdDevMatrix,
-      3
+    SampleFMatrix pixelFstdDevMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
     );
+    ProgressReporter reporter_fstats(nTiles.x * nTiles.y, "Features Mean and StdDev");
+    {
+      ParallelFor2D([&](Point2i tile) {
+        // Compute bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
 
+        // Loop
+        for (Point2i pixel : tileBounds) {
+          // Get samples for pixel
+          SampleDataSet samples = samplingFilm.getPixelSamples(pixel);
+          // Get mean and stdDev for each feature
+          std::vector<SampleF> vectors;
+          for (const SampleData &sd : samples) {
+            vectors.push_back(sd.getFeatures());
+          }
+          pixelFmeanMatrix[pixel.x][pixel.y] = getMean(vectors);
+          pixelFstdDevMatrix[pixel.x][pixel.y] = getStdDev(vectors, pixelFmeanMatrix[pixel.x][pixel.y]);
+        }
+      }, nTiles);
+      reporter_fstats.Done();
+    }
 
-    // 2. Normalization
-    // Get X mean and stdDev for each pixel
-    SampleXMatrix neighborhoodMeanMatrix;
-    SampleXMatrix neighborhoodStdDevMatrix;
-    getXStatsPerPixel(
-      neighborhoodSamples,
-      neighborhoodMeanMatrix,
-      neighborhoodStdDevMatrix
-    );
-    // Normalize
-    SampleDataSetMatrix normSamples = normalizedSamples(
-      neighborhoodSamples,
-      neighborhoodMeanMatrix,
-      neighborhoodStdDevMatrix
-    );
-
-
+    // 1.2 Build Neighborhood and 1.3 Normalize
+    SamplingFilm neighborhoodFilm(sampleBounds);
+  
+    int box_size = 3;
+    ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "BuildNeighborhood And Normalize");
+    {
+      ParallelFor2D([&](Point2i tile) {
+        // Compute sample bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+        // Get neighborhoodFilm for tile
+        std::unique_ptr<SamplingTile> neighborhoodTile = neighborhoodFilm.GetSamplingTile(tileBounds);
+        // Loop
+        bool debugPrint = true;
+        for (Point2i pixel : tileBounds) {
+          // Init with pixel samples
+          auto neighborhood = samplingFilm.getPixelSamples(pixel);
+          // Get surrounding pixels
+          auto b_delta = (box_size-1) / 2; // Assumes box_size is odd
+          for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta; ++xn) {
+            for (int yn = pixel.y - b_delta; yn <= pixel.y + b_delta; ++yn) {
+              // Skip if current pixel
+              if (xn == pixel.x && yn == pixel.y) {
+                continue;
+              }
+              // If pixel is outside bounds, skip
+              if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x || yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
+                continue;
+              }
+              // Check each sample in pixel
+              for (const SampleData &sf : samplingFilm.getPixelSamples( Point2i(xn, yn) )) {
+                // Check if all features are within 3 std deviations
+                auto sfVec = sf.getFeatures();
+                bool within3StdDevs = 
+                  allLessThan(
+                    absArray(subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y])),
+                    multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y], 3) // 3 std devs
+                  );
+                if (within3StdDevs) {
+                  neighborhood.push_back(sf);
+                  if (debugPrint) {
+                    std::cout << "Added sample to neighborhood" << std::endl;
+                    debugPrint = false;
+                  }
+                }
+              }
+            }
+          }
+          // Normalize Neighborhood
+          if (neighborhood.size() > 0) {
+            // Get mean and stdDev for the full array
+            std::vector<SampleX> vectors;
+            for (const SampleData &sd : neighborhood) {
+              vectors.push_back(sd.getFullArray());
+            }
+            auto mean = getMean(vectors);
+            auto stdDev = getStdDev(vectors, mean);
+            // Normalize
+            for (auto it = neighborhood.begin(); it != neighborhood.end(); ++it) {
+              *it = it->normalized(mean, stdDev);
+            }
+          }
+          // Report
+          ReportValue(neighborhoodSizePreMerge, neighborhood.size());
+          // Add samples to neighborhoodTile
+          for (const SampleData &sf : neighborhood) {
+            neighborhoodTile->addSample(pixel, sf);
+          }
+        }
+        // Merge neighborhoodTile into neighborhoodFilm
+        neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));
+      }, nTiles);
+      reporter_build_neighborhood.Done();
+    }
+    LOG(INFO) << "Neighborhood built";
+    
+    // Get stats of neighborhood sizes
+    for (size_t i = 0; i < neighborhoodFilm.samples.size(); ++i) {
+      for (size_t j = 0; j < neighborhoodFilm.samples[i].size(); ++j) {
+        ReportValue(neighborhoodSize, neighborhoodFilm.samples[i][j].size());
+      }
+    }
 
 
 
@@ -341,21 +461,16 @@ namespace pbrt {
 
 
 
-
-
-
-
+    // Render
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
+    auto samples = samplingFilm.samples;
     // Add camera ray's contribution to image
-    double numSamples = 0;
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sf : samples[x][y]) {
-          filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight); // AddSplat instead
-          //filmTile->AddSample(sf.pFilm, sf.L, sf.rayWeight);
+          filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight); // AddSplat instead?
         }
-        numSamples += samples[x][y].size();
       }
     }
     // Sample index

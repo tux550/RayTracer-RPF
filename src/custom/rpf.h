@@ -11,6 +11,7 @@
 #include "visualization/vis.h"
 #include "custom/sd.h"
 #include "custom/ops.h"
+#include "custom/sample_film.h"
 #include "pbrt.h"
 #include "integrator.h"
 #include "camera.h"
