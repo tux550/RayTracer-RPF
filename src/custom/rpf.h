@@ -75,9 +75,13 @@ class RPFIntegrator : public Integrator {
     void FillSampleFilm(
       SamplingFilm &samplingFilm,
       const Scene &scene,
-      const int tileSize,
-      const Bounds2i &sampleBounds,
-      const Vector2i &sampleExtent);
+      const int tileSize);
+    void FillMeanAndStddev(
+      const SamplingFilm &samplingFilm,
+      SampleFMatrix &pixelFmeanMatrix,
+      SampleFMatrix &pixelFstdDevMatrix,
+      const int tileSize);
+
 };
 
 RPFIntegrator *CreateRPFIntegrator(

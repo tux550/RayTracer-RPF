@@ -211,9 +211,10 @@ namespace pbrt {
 void RPFIntegrator::FillSampleFilm(
   SamplingFilm &samplingFilm,
   const Scene &scene,
-  const int tileSize,
-  const Bounds2i &sampleBounds,
-  const Vector2i &sampleExtent) {
+  const int tileSize) {
+  // Get bounds
+  Bounds2i sampleBounds = camera->film->GetSampleBounds();
+  Vector2i sampleExtent = pixelBounds.Diagonal();
   // Divide into tiles
   Point2i nTiles(
     (sampleExtent.x + tileSize - 1) / tileSize,
@@ -288,6 +289,59 @@ void RPFIntegrator::FillSampleFilm(
   LOG(INFO) << "Sampling finished";
 }
 
+  // "Features Mean and StdDev"
+  void RPFIntegrator::FillMeanAndStddev(
+    const SamplingFilm &samplingFilm,
+    SampleFMatrix &pixelFmeanMatrix,
+    SampleFMatrix &pixelFstdDevMatrix,
+    const int tileSize) 
+  {
+    // Get bounds
+    Bounds2i sampleBounds = camera->film->GetSampleBounds();
+    Vector2i sampleExtent = sampleBounds.Diagonal();
+    // Divide into tiles
+    Point2i nTiles(
+      (sampleExtent.x + tileSize - 1) / tileSize,
+      (sampleExtent.y + tileSize - 1) / tileSize
+    );
+    // Init to size
+    pixelFmeanMatrix = SampleFMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
+    );
+    pixelFstdDevMatrix = SampleFMatrix(
+      samplingFilm.getWidth(),
+      SampleFVector(samplingFilm.getHeight(), SampleF())
+    );
+    // Loop over pixels
+    std::cout << "FillMeanAndStddev" << std::endl;
+    ProgressReporter reporter_fstats(nTiles.x * nTiles.y, "Features Mean and StdDev");
+    {
+      ParallelFor2D([&](Point2i tile) {
+        // Compute bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+
+        // Loop
+        for (Point2i pixel : tileBounds) {
+          // Get samples for pixel
+          SampleDataSet samples = samplingFilm.getPixelSamples(pixel);
+          // Get mean and stdDev for each feature
+          std::vector<SampleF> vectors;
+          for (const SampleData &sd : samples) {
+            vectors.push_back(sd.getFeatures());
+          }
+          pixelFmeanMatrix[pixel.x][pixel.y] = getMean(vectors);
+          pixelFstdDevMatrix[pixel.x][pixel.y] = getStdDev(vectors, pixelFmeanMatrix[pixel.x][pixel.y]);
+        }
+      }, nTiles);
+      reporter_fstats.Done();
+    }
+    LOG(INFO) << "Features Mean and StdDev finished";
+  }
 
 
 
@@ -300,20 +354,13 @@ void RPFIntegrator::FillSampleFilm(
     Vector2i sampleExtent = sampleBounds.Diagonal();
     // Divide into tiles
     const int tileSize = 16;
-    Point2i nTiles(
-      (sampleExtent.x + tileSize - 1) / tileSize,
-      (sampleExtent.y + tileSize - 1) / tileSize
-    );
-
     // Init and Fill SamplingFilm
     std::cout << "Init and Fill SamplingFilm" << std::endl;
     SamplingFilm samplingFilm(sampleBounds);
     FillSampleFilm(
       samplingFilm,
       scene,
-      tileSize,
-      sampleBounds,
-      sampleExtent
+      tileSize
     );
 
     for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
@@ -342,44 +389,24 @@ void RPFIntegrator::FillSampleFilm(
 
 
     // 1.1 Get FEATURES mean and stdDev for each pixel
-    SampleFMatrix pixelFmeanMatrix(
-      samplingFilm.getWidth(),
-      SampleFVector(samplingFilm.getHeight(), SampleF())
+    SampleFMatrix pixelFmeanMatrix;
+    SampleFMatrix pixelFstdDevMatrix;
+    FillMeanAndStddev(
+      samplingFilm,
+      pixelFmeanMatrix,
+      pixelFstdDevMatrix,
+      tileSize
     );
-    SampleFMatrix pixelFstdDevMatrix(
-      samplingFilm.getWidth(),
-      SampleFVector(samplingFilm.getHeight(), SampleF())
-    );
-    ProgressReporter reporter_fstats(nTiles.x * nTiles.y, "Features Mean and StdDev");
-    {
-      ParallelFor2D([&](Point2i tile) {
-        // Compute bounds for tile
-        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
-        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
-        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
-        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
-        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
-
-        // Loop
-        for (Point2i pixel : tileBounds) {
-          // Get samples for pixel
-          SampleDataSet samples = samplingFilm.getPixelSamples(pixel);
-          // Get mean and stdDev for each feature
-          std::vector<SampleF> vectors;
-          for (const SampleData &sd : samples) {
-            vectors.push_back(sd.getFeatures());
-          }
-          pixelFmeanMatrix[pixel.x][pixel.y] = getMean(vectors);
-          pixelFstdDevMatrix[pixel.x][pixel.y] = getStdDev(vectors, pixelFmeanMatrix[pixel.x][pixel.y]);
-        }
-      }, nTiles);
-      reporter_fstats.Done();
-    }
 
     // 1.2 Build Neighborhood and 1.3 Normalize
     SamplingFilm neighborhoodFilm(sampleBounds);
   
     int box_size = 3;
+    // Divide into tiles
+    Point2i nTiles(
+      (sampleExtent.x + tileSize - 1) / tileSize,
+      (sampleExtent.y + tileSize - 1) / tileSize
+    );
     ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "BuildNeighborhood And Normalize");
     {
       ParallelFor2D([&](Point2i tile) {
@@ -419,10 +446,6 @@ void RPFIntegrator::FillSampleFilm(
                   );
                 if (within3StdDevs) {
                   neighborhood.push_back(sf);
-                  if (debugPrint) {
-                    std::cout << "Added sample to neighborhood" << std::endl;
-                    debugPrint = false;
-                  }
                 }
               }
             }
