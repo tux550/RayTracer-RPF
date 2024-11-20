@@ -20,7 +20,14 @@
 namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
   STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
-  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("RPF/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
+
+  STAT_FLOAT_DISTRIBUTION("RPF/Neighborhood Input color", inputColorDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/cprime_ik sum", cprimeikSumDistribution);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -480,36 +487,20 @@ void RPFIntegrator::FillSampleFilm(
   }
 
 
-  // Render
-  void RPFIntegrator::Render(const Scene &scene) {  
+
+
+
+
+
+
+  void RPFIntegrator::ApplyRPFFilter(
+    SamplingFilm &samplingFilm,
+    const int tileSize,
+    int box_size //= 3;
+  ) {
     // Get bounds
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
-    // Divide into tiles
-    const int tileSize = 16;
-    // Init and Fill SamplingFilm
-    std::cout << "Init and Fill SamplingFilm" << std::endl;
-    SamplingFilm samplingFilm(sampleBounds);
-    FillSampleFilm(
-      samplingFilm,
-      scene,
-      tileSize
-    );
-
-    for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
-      for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
-        ReportValue(samplesPerPixel, samplingFilm.samples[i][j].size());
-      }
-    }
-
-    // Write FeatureVector data to file
-    std::cout << "Write FeatureVector data to file" << std::endl;
-    visualizeSF(
-      samplingFilm,
-      camera->film->filename
-    );
-
-
 
     // PREPROCESSING THE SAMPLES
     // To do this, we compute the average feature vector m{f,p} and the
@@ -533,8 +524,7 @@ void RPFIntegrator::FillSampleFilm(
 
     // 1.2 Build Neighborhood and 1.3 Normalize
     SamplingFilm neighborhoodFilm(sampleBounds);
-  
-    int box_size = 3;// 35;
+    
     // Position variances depends on box size
     // (The screen position variance sigma^2_p is set by the filter box size, such that the standard deviation sigma_p is one quarter the width of the box)
     double sigma_p = box_size/4;
@@ -546,7 +536,7 @@ void RPFIntegrator::FillSampleFilm(
       (sampleExtent.x + tileSize - 1) / tileSize,
       (sampleExtent.y + tileSize - 1) / tileSize
     );
-    ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "BuildNeighborhood And Normalize");
+    ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "Applying filter");
     {
       ParallelFor2D([&](Point2i tile) {
         // Compute sample bounds for tile
@@ -680,6 +670,9 @@ void RPFIntegrator::FillSampleFilm(
 
               // Save wij
               weights_mat[i][j] = wij;
+
+              // Save wij to stats
+              ReportValue(wijDistribution, wij);
             }
           }
 
@@ -696,7 +689,22 @@ void RPFIntegrator::FillSampleFilm(
               for (size_t j = 0; j < neighborhood.size(); ++j) {
                 sum_w += weights[j];
                 sum_w_c += weights[j] * neighborhood[j].getColorI(k);
+                // Report
+                ReportValue(inputColorDistribution, neighborhood[j].getColorI(k));
               }
+              // Reoport
+              ReportValue(wijSumDistribution, sum_w);
+              ReportValue(wijCjkSumDistribution, sum_w_c);
+              ReportValue(cprimeikSumDistribution, sum_w_c / sum_w);
+              double prime_color = sum_w_c / sum_w;
+
+              // TODO: REMOVE THIS CAPPING
+              //if (prime_color < 0) {
+              //  prime_color = 0;
+              //}
+              //if (prime_color > 300) {
+              //  prime_color = 1;
+              //}
               // Blend
               original_samples[i].setColorI(k, sum_w_c / sum_w);
             }            
@@ -714,17 +722,67 @@ void RPFIntegrator::FillSampleFilm(
       reporter_build_neighborhood.Done();
     }
     LOG(INFO) << "Filter applied";
+    // Swap samplingFilm with neighborhoodFilm
+    samplingFilm.samples = neighborhoodFilm.samples;
+  }
+
+
+  // Render
+  void RPFIntegrator::Render(const Scene &scene) {  
+    // Get bounds
+    Bounds2i sampleBounds = camera->film->GetSampleBounds();
+    Vector2i sampleExtent = sampleBounds.Diagonal();
+    // Divide into tiles
+    const int tileSize = 16;
+    // Init and Fill SamplingFilm
+    std::cout << "Init and Fill SamplingFilm" << std::endl;
+    SamplingFilm samplingFilm(sampleBounds);
+    FillSampleFilm(
+      samplingFilm,
+      scene,
+      tileSize
+    );
+
+    for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
+      for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
+        ReportValue(samplesPerPixel, samplingFilm.samples[i][j].size());
+      }
+    }
+
+    // Write FeatureVector data to file
+    std::cout << "Write FeatureVector data to file" << std::endl;
+    visualizeSF(
+      samplingFilm,
+      camera->film->filename
+    );
+
+    // Apply RPF Filter
+    std::cout << "Apply RPF Filter" << std::endl;
+    std::vector<int> box_sizes = {7}; // {7,5,3}; //{55, 35, 17, 7};
+    for (int box_size : box_sizes) {
+      std::cout << "Applying RPF Filter with box size " << box_size << std::endl;
+      ApplyRPFFilter(
+        samplingFilm,
+        tileSize,
+        box_size
+      );
+    }
 
     // Render
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
-    //auto samples = samplingFilm.samples;
-    auto samples = neighborhoodFilm.samples;
+    auto samples = samplingFilm.samples;
+    //auto samples = neighborhoodFilm.samples;
     // Add camera ray's contribution to image
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sf : samples[x][y]) {
           filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight); // AddSplat instead?
+
+          // Add to stats
+          for (int i = 0; i < SD_N_COLOR; ++i) {
+            ReportValue(outputColorDistribution, sf.getColorI(i));
+          }
         }
       }
     }
