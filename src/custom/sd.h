@@ -202,6 +202,9 @@ struct SampleData {
   double getColorI(int i) const {
     return data[i + 2];
   }
+  void setColorI(int i, double value) {
+    data[i + 2] = value;
+  }
   void setColor(const SampleC &color) {
     data[2] = color[0];
     data[3] = color[1];

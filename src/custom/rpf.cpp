@@ -471,7 +471,12 @@ void RPFIntegrator::FillSampleFilm(
       Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
     }
     // Compute W_r_c
-    W_r_c = D_r_c / (D_r_c + D_p_c);
+    // W [r][c] = 1/3 (W [r][c,1] + W [r][c,2] + W [r][c,3])
+    W_r_c = 0;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      W_r_c += W_r_ck[i];
+    }
+    W_r_c /= SD_N_COLOR;
   }
 
 
@@ -560,6 +565,7 @@ void RPFIntegrator::FillSampleFilm(
         for (Point2i pixel : tileBounds) {
           // Init with pixel samples
           auto neighborhood = samplingFilm.getPixelSamples(pixel);
+          auto original_samples = samplingFilm.getPixelSamples(pixel);
           // Get surrounding pixels
           auto b_delta = (box_size-1) / 2; // Assumes box_size is odd
           for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta; ++xn) {
@@ -588,6 +594,8 @@ void RPFIntegrator::FillSampleFilm(
             }
           }
 
+          ReportValue(neighborhoodSize, neighborhood.size());
+
           // 2. NORMALIZE NEIGHBORHOOD
           if (neighborhood.size()  == 0) {
             std::cout << "Unexpected empty neighborhood" << std::endl;
@@ -605,9 +613,9 @@ void RPFIntegrator::FillSampleFilm(
             *it = it->normalized(mean, stdDev);
           }
           // Add samples to neighborhoodTile
-          for (const SampleData &sf : neighborhood) {
-            neighborhoodTile->addSample(pixel, sf);
-          }
+          //for (const SampleData &sf : neighborhood) {
+          //  neighborhoodTile->addSample(pixel, sf);
+          //}
 
           // 3. COMPUTE ALPHA AND BETA FACTORS
           SampleC Alpha_k;
@@ -621,9 +629,9 @@ void RPFIntegrator::FillSampleFilm(
           );
 
           // 4. WEIGHT THE SAMPLES
-          // Init sample weights as NxN
+          // Init sample weights as PxN
           std::vector<std::vector<double>> weights_mat(
-            neighborhood.size(),
+            original_samples.size(),
             std::vector<double>(neighborhood.size(), 0)
           );
           
@@ -632,10 +640,10 @@ void RPFIntegrator::FillSampleFilm(
           //    exp(- SUM_k ((p_i,k - p_j,k)^2)) / (2 * sigma_p^2)   *
           //    exp(- SUM_k ( ALPHA_k (c_i,k - c_j,k)^2)) / (2 * sigma_n^2)   *
           //    exp(- SUM_k ( BETA_k  (f_i,k - f_j,k)^2)) / (2 * sigma_r^2) 
-          for (size_t i = 0; i < neighborhood.size(); ++i) {
+          for (size_t i = 0; i < original_samples.size(); ++i) {
             for (size_t j = 0; j < neighborhood.size(); ++j) {
               // Get samples
-              auto si = neighborhood[i];
+              auto si = original_samples[i];
               auto sj = neighborhood[j];
               // Get features
               auto fi = si.getFeatures();
@@ -673,76 +681,36 @@ void RPFIntegrator::FillSampleFilm(
           }
 
           // 5. BLEND THE SAMPLES
-          
+          // c'_i,k = (sum_j in N w_ij * c_j,k) / (sum_j in N w_ij)
+          for (size_t i = 0; i < original_samples.size(); ++i) {
+            // Get sample
+            auto si = original_samples[i];
+            // Get weights
+            auto weights = weights_mat[i];
+            for (int k = 0; k < SD_N_COLOR; ++k) {
+              double sum_w = 0;
+              double sum_w_c = 0;
+              for (size_t j = 0; j < neighborhood.size(); ++j) {
+                sum_w += weights[j];
+                sum_w_c += weights[j] * neighborhood[j].getColorI(k);
+              }
+              // Blend
+              original_samples[i].setColorI(k, sum_w_c / sum_w);
+            }            
+          }
+
+          // 6. SAVE BLENDED SAMPLES
+          // Add samples to neighborhoodTile
+          for (const SampleData &sf : original_samples) {
+            neighborhoodTile->addSample(pixel, sf);
+          }
         }
         // Merge neighborhoodTile into neighborhoodFilm
         neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));
       }, nTiles);
       reporter_build_neighborhood.Done();
     }
-    LOG(INFO) << "Neighborhood built";
-    
-    // Get stats of neighborhood sizes
-    for (size_t i = 0; i < neighborhoodFilm.samples.size(); ++i) {
-      for (size_t j = 0; j < neighborhoodFilm.samples[i].size(); ++j) {
-        ReportValue(neighborhoodSize, neighborhoodFilm.samples[i][j].size());
-      }
-    }
-
-
-    /*
-    // STATISTICAL DEPENDENCY ESTIMATION
-    SampleC Alpha_k;
-    SampleF Beta_k;
-    // Compute
-    ComputeCFWeights(
-      neighborhood
-      Alpha_k,
-      Beta_k
-    );
-    // Print 
-    std::cout << "Alpha_k: ";
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-      std::cout << Alpha_k[i] << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "Beta_k: ";
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-      std::cout << Beta_k[i] << " ";
-    }
-    std::cout << std::endl;
-    */
-
-
-    // 1. Mutual Information between Feature k and RandomParameter l using the samples in each Neighborhood
-
-    // 2. Calculate filter weights alpha and beta for each feature
-    // > Calculate Dependency of Feature/Color/Position k on All Random Parameters
-    // > Calculate Dependency of Color k on All Features
-    // > Calculate how all color channels depend on Feature k
-    // > Calculate Drc Dpc and Dfc
-
-    // 3. Compute Fractional Contributions
-    // Wrfk = Drfk / (Drfk + Dpfk)
-    // Wrck = Drck / (Drck + Dpck)
-    // Wrc  = 1/3 (Wrc1 + Wrc2 + Wrc3)
-    // Wfkc = Dfkc / (Drc + Dpc + Dfc)
-
-    // 4. Compute Filter Weights
-    // alpha = 1- Wrck
-    // beta = Wfkc ( 1 - Wrfk )
-
-    // FILTERING THE SAMPLES
-    // > calc wij
-    // > Blend samples
-
-
-
-
-
-
-
-
+    LOG(INFO) << "Filter applied";
 
     // Render
     // Get filmTile
