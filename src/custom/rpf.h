@@ -88,7 +88,11 @@ class RPFIntegrator : public Integrator {
     SampleF &Beta_k,
     double &W_r_c
   );
-
+  void ApplyRPFFilter(
+    SamplingFilm &samplingFilm,
+    const int tileSize,
+    int box_size //= 3;
+  );
 };
 
 RPFIntegrator *CreateRPFIntegrator(
