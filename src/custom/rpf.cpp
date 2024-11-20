@@ -699,12 +699,12 @@ void RPFIntegrator::FillSampleFilm(
               double prime_color = sum_w_c / sum_w;
 
               // TODO: REMOVE THIS CAPPING
-              if (prime_color < 0) {
-                prime_color = 0;
-              }
-              if (prime_color > 255) {
-                prime_color = 1;
-              }
+              //if (prime_color < 0) {
+              //  prime_color = 0;
+              //}
+              //if (prime_color > 300) {
+              //  prime_color = 1;
+              //}
               // Blend
               original_samples[i].setColorI(k, sum_w_c / sum_w);
             }            
