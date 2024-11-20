@@ -1,6 +1,8 @@
 
 // custom/rpf.cpp*
 #include "custom/rpf.h"
+#include "custom/sd.h"
+#include "custom/mi.h"
 
 #include "bssrdf.h"
 #include "camera.h"
@@ -343,7 +345,105 @@ void RPFIntegrator::FillSampleFilm(
   }
 
 
+  void RPFIntegrator::ComputeStatisticalDependency(SampleDataSet neighborhood) {
+    // Init dependencies 
+    SampleFR fr; // D[r,f,k]
+    SampleFP fp; // D[p,f,k]
+    SampleCR cr; // D[r,c,k]
+    SampleCP cp; // D[p,c,k]
+    // Init to 0
+    for (size_t i = 0; i < SD_N_FEATURES; ++i) {
+      for (size_t j = 0; j < SD_N_RANDOM; ++j) {
+        fr[i][j] = 0;
+      }
+    }
+    for (size_t i = 0; i < SD_N_FEATURES; ++i) {
+      for (size_t j = 0; j < SD_N_POSITION; ++j) {
+        fp[i][j] = 0;
+      }
+    }
+    for (size_t i = 0; i < SD_N_COLOR; ++i) {
+      for (size_t j = 0; j < SD_N_RANDOM; ++j) {
+        cr[i][j] = 0;
+      }
+    }
+    for (size_t i = 0; i < SD_N_COLOR; ++i) {
+      for (size_t j = 0; j < SD_N_POSITION; ++j) {
+        cp[i][j] = 0;
+      }
+    }
+    // 1. Aproximate joint mutual information as sum of mutual informations
+    std::vector<std::vector<double>> features_data;
+    std::vector<std::vector<double>> positions_data;
+    std::vector<std::vector<double>> colors_data;
+    std::vector<std::vector<double>> random_data;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      std::vector<double> fi_samples;
+      for (const SampleData &sd : neighborhood) {
+        fi_samples.push_back(sd.getFeatureI(i));
+      }
+      features_data.push_back(fi_samples);
+    }
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+      std::vector<double> pi_samples;
+      for (const SampleData &sd : neighborhood) {
+        pi_samples.push_back(sd.getPositionI(i));
+      }
+      positions_data.push_back(pi_samples);
+    }
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      std::vector<double> ci_samples;
+      for (const SampleData &sd : neighborhood) {
+        ci_samples.push_back(sd.getColorI(i));
+      }
+      colors_data.push_back(ci_samples);
+    }
+    for (int i = 0; i < SD_N_RANDOM; ++i) {
+      std::vector<double> ri_samples;
+      for (const SampleData &sd : neighborhood) {
+        ri_samples.push_back(sd.getRandomI(i));
+      }
+      random_data.push_back(ri_samples);
+    }
+    
+    // For each pair feature x random compute mutual information
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      for (int j = 0; j < SD_N_RANDOM; ++j) {
+        // Compute mutual information
+        fr[i][j] = MutualInformation(features_data[i], random_data[j]);
+      }
+    }
+    // For each pair feature x position compute mutual information
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      for (int j = 0; j < SD_N_POSITION; ++j) {
+        // Compute mutual information
+        fp[i][j] = MutualInformation(features_data[i], positions_data[j]);
+      }
+    }
 
+    // For each pair color x random compute mutual information
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      for (int j = 0; j < SD_N_RANDOM; ++j) {
+        // Compute mutual information
+        cr[i][j] = MutualInformation(colors_data[i], random_data[j]);
+      }
+    }
+    // For each pair color x position compute mutual information
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      for (int j = 0; j < SD_N_POSITION; ++j) {
+        // Compute mutual information
+        cp[i][j] = MutualInformation(colors_data[i], positions_data[j]);
+      }
+    }
+
+    // 2. Dependencies on all features
+    // D[f,c] = SUM (D[f,k,c]) for all k
+    // D[r,c] = SUM (D[r,k,c]) for all k
+    // D[p,c] = SUM (D[p,k,c]) for all k
+
+    // 3. Compute fractional contribution of the random parameters to color channel
+    // W [f,k,c] = D[f,k,c] / (D[r,c] + D[p,c] + D[f,c])
+  }
 
 
   // Render
@@ -417,6 +517,9 @@ void RPFIntegrator::FillSampleFilm(
         Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
         // Get neighborhoodFilm for tile
         std::unique_ptr<SamplingTile> neighborhoodTile = neighborhoodFilm.GetSamplingTile(tileBounds);
+
+
+        // 1. BUILD NEIGHBORHOOD
         // Loop
         bool debugPrint = true;
         for (Point2i pixel : tileBounds) {
@@ -449,24 +552,29 @@ void RPFIntegrator::FillSampleFilm(
               }
             }
           }
-          // Normalize Neighborhood
-          if (neighborhood.size() > 0) {
-            // Get mean and stdDev for the full array
-            std::vector<SampleX> vectors;
-            for (const SampleData &sd : neighborhood) {
-              vectors.push_back(sd.getFullArray());
-            }
-            auto mean = getMean(vectors);
-            auto stdDev = getStdDev(vectors, mean);
-            // Normalize
-            for (auto it = neighborhood.begin(); it != neighborhood.end(); ++it) {
-              *it = it->normalized(mean, stdDev);
-            }
+
+          // 2. NORMALIZE NEIGHBORHOOD
+          if (neighborhood.size()  == 0) {
+            std::cout << "Unexpected empty neighborhood" << std::endl;
+            continue;
+          }
+          // Get mean and stdDev for the full array
+          std::vector<SampleX> vectors;
+          for (const SampleData &sd : neighborhood) {
+            vectors.push_back(sd.getFullArray());
+          }
+          auto mean = getMean(vectors);
+          auto stdDev = getStdDev(vectors, mean);
+          // Normalize
+          for (auto it = neighborhood.begin(); it != neighborhood.end(); ++it) {
+            *it = it->normalized(mean, stdDev);
           }
           // Add samples to neighborhoodTile
           for (const SampleData &sf : neighborhood) {
             neighborhoodTile->addSample(pixel, sf);
           }
+
+          // 3. COMPUTE STATISTICAL DEPENDENCY ESTIMATION
         }
         // Merge neighborhoodTile into neighborhoodFilm
         neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));

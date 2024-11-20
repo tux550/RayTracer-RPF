@@ -28,6 +28,20 @@ typedef std::array<double, 2> SampleR;
 // SampleColor: L
 typedef std::array<double, 3> SampleC;
 
+// Feature x Random parameters
+typedef std::array<SampleF, 2> SampleFR;
+// Feature x Position
+typedef std::array<SampleF, 2> SampleFP;
+// Color x Random parameters
+typedef std::array<SampleC, 2> SampleCR;
+// Color x Position
+typedef std::array<SampleC, 2> SampleCP;
+
+const size_t SD_N_FEATURES = 12;
+const size_t SD_N_POSITION = 2;
+const size_t SD_N_RANDOM = 2;
+const size_t SD_N_COLOR = 3;
+
 // Types
 typedef std::array<double, 19> SampleFullArray;
 typedef SampleFullArray SampleX;
@@ -142,6 +156,9 @@ struct SampleData {
   SampleF getFeatures() const {
     return getFeatures(data);
   }
+  double getFeatureI(int i) const {
+    return data[i + 7];
+  }
   void setFeatures(const SampleF &features) {
     for (int i = 0; i < 12; i++) {
       data[i + 7] = features[i];
@@ -154,6 +171,9 @@ struct SampleData {
   SampleP getPosition() const {
     return getPosition(data);
   }
+  double getPositionI(int i) const {
+    return data[i];
+  }
   void setPosition(const SampleP &position) {
     data[0] = position[0];
     data[1] = position[1];
@@ -165,6 +185,9 @@ struct SampleData {
   SampleR getRandom() const {
     return getRandom(data);
   }
+  double getRandomI(int i) const {
+    return data[i + 5];
+  }
   void setRandom(const SampleR &random) {
     data[5] = random[0];
     data[6] = random[1];
@@ -175,6 +198,9 @@ struct SampleData {
   }
   SampleC getColor() const {
     return getColor(data);
+  }
+  double getColorI(int i) const {
+    return data[i + 2];
   }
   void setColor(const SampleC &color) {
     data[2] = color[0];
