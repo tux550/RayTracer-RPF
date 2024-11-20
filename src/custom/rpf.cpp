@@ -348,7 +348,8 @@ void RPFIntegrator::FillSampleFilm(
   void RPFIntegrator::ComputeCFWeights(
     const SampleDataSet& neighborhood,
     SampleC &Alpha_k,
-    SampleF &Beta_k
+    SampleF &Beta_k,
+    double &W_r_c
   ) {
     // Init dependencies 
     SampleF D_r_fk; // D[r][f,k] = SUM_l MutualInformation(f_k, r_l)
@@ -469,6 +470,8 @@ void RPFIntegrator::FillSampleFilm(
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
     }
+    // Compute W_r_c
+    W_r_c = D_r_c / (D_r_c + D_p_c);
   }
 
 
@@ -609,10 +612,12 @@ void RPFIntegrator::FillSampleFilm(
           // 3. COMPUTE ALPHA AND BETA FACTORS
           SampleC Alpha_k;
           SampleF Beta_k;
+          double W_r_c;
           ComputeCFWeights(
             neighborhood,
             Alpha_k,
-            Beta_k
+            Beta_k,
+            W_r_c
           );
 
           // 4. WEIGHT THE SAMPLES
@@ -645,11 +650,29 @@ void RPFIntegrator::FillSampleFilm(
               
               // (p_i,k - p_j,k)^2
               auto p_square_diff = squareArray(subtractArrays(pi, pj));
+              // (c_i,k - c_j,k)^2
+              auto c_square_diff = squareArray(subtractArrays(ci, cj));
+              // (f_i,k - f_j,k)^2
+              auto f_square_diff = squareArray(subtractArrays(fi, fj));
 
-              // TODO
+              // Compute sigmas
+              // sigma_f^2 = sigma_c^2 = sigma_fc_seed^2 / (1 - W_r_c)^2
+              double sigma_c_squared = sigma_fc_seed * sigma_fc_seed / (1 - W_r_c) / (1 - W_r_c);
+              double sigma_f_squared = sigma_c_squared;
+              double sigma_p_squared = sigma_p * sigma_p;
 
+              // Calculate wij
+              double wij = 
+                exp(-sumArray(p_square_diff) / (2 * sigma_p_squared)) *
+                exp(-sumArray(multiplyArrays(c_square_diff, Alpha_k)) / (2 * sigma_c_squared)) *
+                exp(-sumArray(multiplyArrays(f_square_diff, Beta_k)) / (2 * sigma_f_squared));
+
+              // Save wij
+              weights_mat[i][j] = wij;
             }
           }
+
+          // 5. BLEND THE SAMPLES
           
         }
         // Merge neighborhoodTile into neighborhoodFilm

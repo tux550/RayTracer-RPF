@@ -24,6 +24,15 @@ std::array<T,N> sumArrays(const std::array<T,N> &a, const std::array<T,N> &b) {
 }
 
 template <typename T, size_t N>
+T sumArray(const std::array<T,N> &a) {
+  T result = 0;
+  for (size_t i = 0; i < N; ++i) {
+    result += a[i];
+  }
+  return result;
+}
+
+template <typename T, size_t N>
 std::array<T,N> divideArray(const std::array<T,N> &a, double scalar) {
   std::array<T,N> result;
   for (size_t i = 0; i < N; ++i) {

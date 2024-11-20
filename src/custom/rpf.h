@@ -85,7 +85,8 @@ class RPFIntegrator : public Integrator {
     void ComputeCFWeights(
     const SampleDataSet& neighborhood,
     SampleC &Alpha_k,
-    SampleF &Beta_k
+    SampleF &Beta_k,
+    double &W_r_c
   );
 
 };
