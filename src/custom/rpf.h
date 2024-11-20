@@ -82,6 +82,12 @@ class RPFIntegrator : public Integrator {
       SampleFMatrix &pixelFstdDevMatrix,
       const int tileSize);
 
+    void ComputeCFWeights(
+    const SampleDataSet& neighborhood,
+    SampleC &Alpha_k,
+    SampleF &Beta_k
+  );
+
 };
 
 RPFIntegrator *CreateRPFIntegrator(

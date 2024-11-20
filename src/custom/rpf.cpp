@@ -345,34 +345,30 @@ void RPFIntegrator::FillSampleFilm(
   }
 
 
-  void RPFIntegrator::ComputeStatisticalDependency(SampleDataSet neighborhood) {
+  void RPFIntegrator::ComputeCFWeights(
+    const SampleDataSet& neighborhood,
+    SampleC &Alpha_k,
+    SampleF &Beta_k
+  ) {
     // Init dependencies 
-    SampleFR fr; // D[r,f,k]
-    SampleFP fp; // D[p,f,k]
-    SampleCR cr; // D[r,c,k]
-    SampleCP cp; // D[p,c,k]
+    SampleF D_r_fk; // D[r][f,k] = SUM_l MutualInformation(f_k, r_l)
+    SampleF D_p_fk; // D[p][f,k] = SUM_l MutualInformation(f_k, p_l)
+    SampleC D_r_ck; // D[r][c,k] = SUM_l MutualInformation(c_k, r_l)
+    SampleC D_p_ck; // D[p][c,k] = SUM_l MutualInformation(c_k, p_l)
+    SampleC D_f_ck; // D[f][c,k] = SUM_l MutualInformation(c_k, f_l)
     // Init to 0
     for (size_t i = 0; i < SD_N_FEATURES; ++i) {
-      for (size_t j = 0; j < SD_N_RANDOM; ++j) {
-        fr[i][j] = 0;
-      }
-    }
-    for (size_t i = 0; i < SD_N_FEATURES; ++i) {
-      for (size_t j = 0; j < SD_N_POSITION; ++j) {
-        fp[i][j] = 0;
-      }
+      D_r_fk[i] = 0;
+      D_p_fk[i] = 0;
     }
     for (size_t i = 0; i < SD_N_COLOR; ++i) {
-      for (size_t j = 0; j < SD_N_RANDOM; ++j) {
-        cr[i][j] = 0;
-      }
-    }
-    for (size_t i = 0; i < SD_N_COLOR; ++i) {
-      for (size_t j = 0; j < SD_N_POSITION; ++j) {
-        cp[i][j] = 0;
-      }
+      D_r_ck[i] = 0;
+      D_p_ck[i] = 0;
+      D_f_ck[i] = 0;
     }
     // 1. Aproximate joint mutual information as sum of mutual informations
+    // Init data vectors
+    /*
     std::vector<std::vector<double>> features_data;
     std::vector<std::vector<double>> positions_data;
     std::vector<std::vector<double>> colors_data;
@@ -405,44 +401,70 @@ void RPFIntegrator::FillSampleFilm(
       }
       random_data.push_back(ri_samples);
     }
-    
-    // For each pair feature x random compute mutual information
+    // Compute mutual information
     for (int i = 0; i < SD_N_FEATURES; ++i) {
+      // For each pair feature x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
-        // Compute mutual information
-        fr[i][j] = MutualInformation(features_data[i], random_data[j]);
+        D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+      }
+      // For each pair feature x position compute mutual information
+      for (int j = 0; j < SD_N_POSITION; ++j) {
+        D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
       }
     }
-    // For each pair feature x position compute mutual information
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      // For each pair color x random compute mutual information
+      for (int j = 0; j < SD_N_RANDOM; ++j) {
+        D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
+      }
+      // For each pair color x position compute mutual information
+      for (int j = 0; j < SD_N_POSITION; ++j) {
+        D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
+      }
+      // For each pair color x feature compute mutual information
+      for (int j = 0; j < SD_N_FEATURES; ++j) {
+        D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
+      }
+    }
+
+
+    // 2. Dependencies of color x feature, color x position, and feature x position
+    // D[f][c] = SUM (D[f][c,k]) for all k
+    // D[r][c] = SUM (D[r][c,k]) for all k
+    // D[p][c] = SUM (D[p][c,k]) for all k
+    double D_f_c=0;
+    double D_r_c=0;
+    double D_p_c=0;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      D_f_c += D_f_ck[i];
+      D_r_c += D_r_ck[i];
+      D_p_c += D_p_ck[i];
+    }
+
+    // 3. Compute fractional contributions
+    // W [c][f,k] = D[c][f,k] / ( D[c][f] + D[c][r] + D[c][p] )
+    // W [r][f,k] = D[r][f,k] / ( D[r][f,k] + D[p][f,k] )
+    SampleF W_c_fk;
+    SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-      for (int j = 0; j < SD_N_POSITION; ++j) {
-        // Compute mutual information
-        fp[i][j] = MutualInformation(features_data[i], positions_data[j]);
-      }
+      W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
+      W_r_fk[i] = D_r_fk[i] / (D_r_fk[i] + D_p_fk[i]);
     }
-
-    // For each pair color x random compute mutual information
+    // W [r][c,k] = D[r][c,k] / ( D[r][c] + D[p][c] )
+    SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-      for (int j = 0; j < SD_N_RANDOM; ++j) {
-        // Compute mutual information
-        cr[i][j] = MutualInformation(colors_data[i], random_data[j]);
-      }
+      W_r_ck[i] = D_r_ck[i] / (D_r_c + D_p_c);
     }
-    // For each pair color x position compute mutual information
+    // 4. Compute Alpha and Beta
+    // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
-      for (int j = 0; j < SD_N_POSITION; ++j) {
-        // Compute mutual information
-        cp[i][j] = MutualInformation(colors_data[i], positions_data[j]);
-      }
+      Alpha_k[i] = 1 - W_r_ck[i];
     }
-
-    // 2. Dependencies on all features
-    // D[f,c] = SUM (D[f,k,c]) for all k
-    // D[r,c] = SUM (D[r,k,c]) for all k
-    // D[p,c] = SUM (D[p,k,c]) for all k
-
-    // 3. Compute fractional contribution of the random parameters to color channel
-    // W [f,k,c] = D[f,k,c] / (D[r,c] + D[p,c] + D[f,c])
+    // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
+    }
+    */
   }
 
 
@@ -575,6 +597,32 @@ void RPFIntegrator::FillSampleFilm(
           }
 
           // 3. COMPUTE STATISTICAL DEPENDENCY ESTIMATION
+
+          // STATISTICAL DEPENDENCY ESTIMATION
+          if (debugPrint) {
+            debugPrint = false;
+            SampleC Alpha_k;
+            SampleF Beta_k;
+            // Compute
+            std::cout << "Computing CF Weights" << std::endl;
+            ComputeCFWeights(
+              neighborhood,
+              Alpha_k,
+              Beta_k
+            );
+            std::cout << "Finished Computing CF Weights" << std::endl;
+            // Print 
+            std::cout << "Alpha_k: ";
+            for (int i = 0; i < SD_N_COLOR; ++i) {
+              std::cout << Alpha_k[i] << " ";
+            }
+            std::cout << std::endl;
+            std::cout << "Beta_k: ";
+            for (int i = 0; i < SD_N_FEATURES; ++i) {
+              std::cout << Beta_k[i] << " ";
+            }
+            std::cout << std::endl;
+          }
         }
         // Merge neighborhoodTile into neighborhoodFilm
         neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));
@@ -591,8 +639,30 @@ void RPFIntegrator::FillSampleFilm(
     }
 
 
-
+    /*
     // STATISTICAL DEPENDENCY ESTIMATION
+    SampleC Alpha_k;
+    SampleF Beta_k;
+    // Compute
+    ComputeCFWeights(
+      neighborhood
+      Alpha_k,
+      Beta_k
+    );
+    // Print 
+    std::cout << "Alpha_k: ";
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      std::cout << Alpha_k[i] << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "Beta_k: ";
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      std::cout << Beta_k[i] << " ";
+    }
+    std::cout << std::endl;
+    */
+
+
     // 1. Mutual Information between Feature k and RandomParameter l using the samples in each Neighborhood
 
     // 2. Calculate filter weights alpha and beta for each feature
