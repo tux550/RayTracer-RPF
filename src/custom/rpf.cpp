@@ -432,7 +432,7 @@ void RPFIntegrator::FillSampleFilm(
       }
     }
 
-            /*
+
     // 2. Dependencies of color x feature, color x position, and feature x position
     // D[f][c] = SUM (D[f][c,k]) for all k
     // D[r][c] = SUM (D[r][c,k]) for all k
@@ -469,7 +469,6 @@ void RPFIntegrator::FillSampleFilm(
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
     }
-    */
   }
 
 
