@@ -20,7 +20,14 @@
 namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
   STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
-  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("RPF/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
+
+  STAT_FLOAT_DISTRIBUTION("RPF/Neighborhood Input color", inputColorDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
+  STAT_FLOAT_DISTRIBUTION("RPF/cprime_ik sum", cprimeikSumDistribution);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -663,6 +670,9 @@ void RPFIntegrator::FillSampleFilm(
 
               // Save wij
               weights_mat[i][j] = wij;
+
+              // Save wij to stats
+              ReportValue(wijDistribution, wij);
             }
           }
 
@@ -679,6 +689,21 @@ void RPFIntegrator::FillSampleFilm(
               for (size_t j = 0; j < neighborhood.size(); ++j) {
                 sum_w += weights[j];
                 sum_w_c += weights[j] * neighborhood[j].getColorI(k);
+                // Report
+                ReportValue(inputColorDistribution, neighborhood[j].getColorI(k));
+              }
+              // Reoport
+              ReportValue(wijSumDistribution, sum_w);
+              ReportValue(wijCjkSumDistribution, sum_w_c);
+              ReportValue(cprimeikSumDistribution, sum_w_c / sum_w);
+              double prime_color = sum_w_c / sum_w;
+
+              // TODO: REMOVE THIS CAPPING
+              if (prime_color < 0) {
+                prime_color = 0;
+              }
+              if (prime_color > 255) {
+                prime_color = 1;
               }
               // Blend
               original_samples[i].setColorI(k, sum_w_c / sum_w);
@@ -733,7 +758,7 @@ void RPFIntegrator::FillSampleFilm(
 
     // Apply RPF Filter
     std::cout << "Apply RPF Filter" << std::endl;
-    std::vector<int> box_sizes = {7,5,3}; //{55, 35, 17, 7};
+    std::vector<int> box_sizes = {7}; // {7,5,3}; //{55, 35, 17, 7};
     for (int box_size : box_sizes) {
       std::cout << "Applying RPF Filter with box size " << box_size << std::endl;
       ApplyRPFFilter(
@@ -753,6 +778,11 @@ void RPFIntegrator::FillSampleFilm(
       for (int y = 0; y < sampleExtent.y; ++y) {
         for (const SampleData &sf : samples[x][y]) {
           filmTile->AddSample(sf.getPFilm(), sf.getL(), sf.rayWeight); // AddSplat instead?
+
+          // Add to stats
+          for (int i = 0; i < SD_N_COLOR; ++i) {
+            ReportValue(outputColorDistribution, sf.getColorI(i));
+          }
         }
       }
     }
