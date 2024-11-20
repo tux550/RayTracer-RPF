@@ -19,7 +19,6 @@ namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
   STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
   STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size", neighborhoodSize);
-  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size Pre Merge", neighborhoodSizePreMerge);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -401,7 +400,7 @@ void RPFIntegrator::FillSampleFilm(
     // 1.2 Build Neighborhood and 1.3 Normalize
     SamplingFilm neighborhoodFilm(sampleBounds);
   
-    int box_size = 3;
+    int box_size = 3;// 35;
     // Divide into tiles
     Point2i nTiles(
       (sampleExtent.x + tileSize - 1) / tileSize,
@@ -464,8 +463,6 @@ void RPFIntegrator::FillSampleFilm(
               *it = it->normalized(mean, stdDev);
             }
           }
-          // Report
-          ReportValue(neighborhoodSizePreMerge, neighborhood.size());
           // Add samples to neighborhoodTile
           for (const SampleData &sf : neighborhood) {
             neighborhoodTile->addSample(pixel, sf);
