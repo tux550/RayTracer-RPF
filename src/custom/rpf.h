@@ -72,7 +72,12 @@ class RPFIntegrator : public Integrator {
       size_t box_size // Always odd
     );
 
-
+    void FillSampleFilm(
+      SamplingFilm &samplingFilm,
+      const Scene &scene,
+      const int tileSize,
+      const Bounds2i &sampleBounds,
+      const Vector2i &sampleExtent);
 };
 
 RPFIntegrator *CreateRPFIntegrator(
