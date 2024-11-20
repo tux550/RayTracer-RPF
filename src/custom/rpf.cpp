@@ -401,11 +401,14 @@ void RPFIntegrator::FillSampleFilm(
       }
       random_data.push_back(ri_samples);
     }
-        /*
+
     // Compute mutual information
+
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       // For each pair feature x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
+        auto a = features_data[i];
+        auto b = random_data[j];
         D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
       }
       // For each pair feature x position compute mutual information
@@ -413,6 +416,7 @@ void RPFIntegrator::FillSampleFilm(
         D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
       }
     }
+
     for (int i = 0; i < SD_N_COLOR; ++i) {
       // For each pair color x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
@@ -428,7 +432,7 @@ void RPFIntegrator::FillSampleFilm(
       }
     }
 
-
+            /*
     // 2. Dependencies of color x feature, color x position, and feature x position
     // D[f][c] = SUM (D[f][c,k]) for all k
     // D[r][c] = SUM (D[r][c,k]) for all k
