@@ -609,20 +609,23 @@ void RPFIntegrator::FillSampleFilm(
           auto mean = getMean(vectors);
           auto stdDev = getStdDev(vectors, mean);
           // Normalize
+          SampleDataSet normalized_neighborhood;
           for (auto it = neighborhood.begin(); it != neighborhood.end(); ++it) {
-            *it = it->normalized(mean, stdDev);
+            // Push normalized sample
+            normalized_neighborhood.push_back(it->normalized(mean, stdDev));
           }
-          // Add samples to neighborhoodTile
-          //for (const SampleData &sf : neighborhood) {
-          //  neighborhoodTile->addSample(pixel, sf);
-          //}
+          SampleDataSet normalized_original_samples;
+          for (auto it = original_samples.begin(); it != original_samples.end(); ++it) {
+            // Push normalized sample
+            normalized_original_samples.push_back(it->normalized(mean, stdDev));
+          }
 
           // 3. COMPUTE ALPHA AND BETA FACTORS
           SampleC Alpha_k;
           SampleF Beta_k;
           double W_r_c;
           ComputeCFWeights(
-            neighborhood,
+            normalized_neighborhood,
             Alpha_k,
             Beta_k,
             W_r_c
@@ -631,8 +634,8 @@ void RPFIntegrator::FillSampleFilm(
           // 4. WEIGHT THE SAMPLES
           // Init sample weights as PxN
           std::vector<std::vector<double>> weights_mat(
-            original_samples.size(),
-            std::vector<double>(neighborhood.size(), 0)
+            normalized_original_samples.size(),
+            std::vector<double>(normalized_neighborhood.size(), 0)
           );
           
           // Calculate wij for each pair of samples i,j
@@ -640,11 +643,11 @@ void RPFIntegrator::FillSampleFilm(
           //    exp(- SUM_k ((p_i,k - p_j,k)^2)) / (2 * sigma_p^2)   *
           //    exp(- SUM_k ( ALPHA_k (c_i,k - c_j,k)^2)) / (2 * sigma_n^2)   *
           //    exp(- SUM_k ( BETA_k  (f_i,k - f_j,k)^2)) / (2 * sigma_r^2) 
-          for (size_t i = 0; i < original_samples.size(); ++i) {
-            for (size_t j = 0; j < neighborhood.size(); ++j) {
+          for (size_t i = 0; i < normalized_original_samples.size(); ++i) {
+            for (size_t j = 0; j < normalized_neighborhood.size(); ++j) {
               // Get samples
-              auto si = original_samples[i];
-              auto sj = neighborhood[j];
+              auto si = normalized_original_samples[i];
+              auto sj = normalized_neighborhood[j];
               // Get features
               auto fi = si.getFeatures();
               auto fj = sj.getFeatures();
@@ -715,7 +718,8 @@ void RPFIntegrator::FillSampleFilm(
     // Render
     // Get filmTile
     std::unique_ptr<FilmTile> filmTile = camera->film->GetFilmTile(sampleBounds);
-    auto samples = samplingFilm.samples;
+    //auto samples = samplingFilm.samples;
+    auto samples = neighborhoodFilm.samples;
     // Add camera ray's contribution to image
     for (int x = 0; x < sampleExtent.x; ++x) {
       for (int y = 0; y < sampleExtent.y; ++y) {
