@@ -200,88 +200,121 @@ namespace pbrt {
     return neighborhoodSamples;
   }
 
+
+
+
+
+
+
+
+
+void RPFIntegrator::FillSampleFilm(
+  SamplingFilm &samplingFilm,
+  const Scene &scene,
+  const int tileSize,
+  const Bounds2i &sampleBounds,
+  const Vector2i &sampleExtent) {
+  // Divide into tiles
+  Point2i nTiles(
+    (sampleExtent.x + tileSize - 1) / tileSize,
+    (sampleExtent.y + tileSize - 1) / tileSize
+  );
+  // Progress reporter
+  ProgressReporter reporter_sampling(nTiles.x * nTiles.y, "Sampling");
+  {
+    ParallelFor2D([&](Point2i tile) {
+      // Allocate
+      MemoryArena arena;
+
+      // Get sampler instance for tile
+      int seed = tile.y * nTiles.x + tile.x;
+      std::unique_ptr<Sampler> tileSampler = sampler->Clone(seed);
+
+      // Compute sample bounds for tile
+      int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+      int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+      int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+      int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+      Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+      LOG(INFO) << "Starting image tile " << tileBounds;
+
+      // Get SamplingTile for tile
+      std::unique_ptr<SamplingTile> samplingTile = samplingFilm.GetSamplingTile(tileBounds);
+
+      // Loop over pixels in tile to render them
+      for (Point2i pixel : tileBounds) {
+        // Init pixel
+        {
+          ProfilePhase pp(Prof::StartPixel);
+          tileSampler->StartPixel(pixel);
+        }
+        // For RNG reproducibility
+        if (!InsideExclusive(pixel, pixelBounds))
+          continue;
+
+        do {
+          // Initialize _CameraSample_ for current sample
+          CameraSample cameraSample = tileSampler->GetCameraSample(pixel);
+          // Generate camera ray for current sample
+          RayDifferential ray;
+          Float rayWeight = camera->GenerateRayDifferential(cameraSample, &ray);
+          ray.ScaleDifferentials(1 / std::sqrt((Float)tileSampler->samplesPerPixel));
+          ++nCameraRays;
+          // Evaluate radiance along camera ray and capture Features
+          SampleData sf(
+            cameraSample.pFilm, // Film position
+            cameraSample.pLens, // Lens position
+            0.f ,                // L (placeholder)
+            rayWeight           // Ray weight
+          );
+          if (rayWeight > 0) {
+            // Evaluate radiance along camera ray
+            Li(ray, scene, *tileSampler, arena, sf);
+          }
+          samplingTile->addSample(pixel, sf);
+
+          // Free _MemoryArena_ memory from computing image sample value
+          arena.Reset();
+
+        } while (tileSampler->StartNextSample());
+      }
+      LOG(INFO) << "Finished sampling tile " << tileBounds;
+
+      // Merge image tile into _SamplingFilm_
+      samplingFilm.MergeSamplingTile(std::move(samplingTile));
+    }, nTiles);
+    reporter_sampling.Done();
+  }
+  LOG(INFO) << "Sampling finished";
+}
+
+
+
+
+
+
   // Render
   void RPFIntegrator::Render(const Scene &scene) {  
     // Get bounds
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
-
-    // Init SamplingFilm
-    SamplingFilm samplingFilm(sampleBounds);
-
     // Divide into tiles
     const int tileSize = 16;
     Point2i nTiles(
       (sampleExtent.x + tileSize - 1) / tileSize,
       (sampleExtent.y + tileSize - 1) / tileSize
     );
-    // Progress reporter
-    ProgressReporter reporter_sampling(nTiles.x * nTiles.y, "Sampling");
-    {
-      ParallelFor2D([&](Point2i tile) {
-        // Allocate
-        MemoryArena arena;
 
-        // Get sampler instance for tile
-        int seed = tile.y * nTiles.x + tile.x;
-        std::unique_ptr<Sampler> tileSampler = sampler->Clone(seed);
-
-        // Compute sample bounds for tile
-        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
-        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
-        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
-        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
-        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
-        LOG(INFO) << "Starting image tile " << tileBounds;
-
-        // Get SamplingTile for tile
-        std::unique_ptr<SamplingTile> samplingTile = samplingFilm.GetSamplingTile(tileBounds);
-
-        // Loop over pixels in tile to render them
-        for (Point2i pixel : tileBounds) {
-          // Init pixel
-          {
-            ProfilePhase pp(Prof::StartPixel);
-            tileSampler->StartPixel(pixel);
-          }
-          // For RNG reproducibility
-          if (!InsideExclusive(pixel, pixelBounds))
-            continue;
-
-          do {
-            // Initialize _CameraSample_ for current sample
-            CameraSample cameraSample = tileSampler->GetCameraSample(pixel);
-            // Generate camera ray for current sample
-            RayDifferential ray;
-            Float rayWeight = camera->GenerateRayDifferential(cameraSample, &ray);
-            ray.ScaleDifferentials(1 / std::sqrt((Float)tileSampler->samplesPerPixel));
-            ++nCameraRays;
-            // Evaluate radiance along camera ray and capture Features
-            SampleData sf(
-              cameraSample.pFilm, // Film position
-              cameraSample.pLens, // Lens position
-              0.f ,                // L (placeholder)
-              rayWeight           // Ray weight
-            );
-            if (rayWeight > 0) {
-              // Evaluate radiance along camera ray
-              Li(ray, scene, *tileSampler, arena, sf);
-            }
-            samplingTile->addSample(pixel, sf);
-
-            // Free _MemoryArena_ memory from computing image sample value
-            arena.Reset();
-
-          } while (tileSampler->StartNextSample());
-        }
-        LOG(INFO) << "Finished sampling tile " << tileBounds;
-
-        // Merge image tile into _SamplingFilm_
-        samplingFilm.MergeSamplingTile(std::move(samplingTile));
-      }, nTiles);
-      reporter_sampling.Done();
-    }
-    LOG(INFO) << "Sampling finished";
+    // Init and Fill SamplingFilm
+    std::cout << "Init and Fill SamplingFilm" << std::endl;
+    SamplingFilm samplingFilm(sampleBounds);
+    FillSampleFilm(
+      samplingFilm,
+      scene,
+      tileSize,
+      sampleBounds,
+      sampleExtent
+    );
 
     for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
       for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
@@ -290,6 +323,7 @@ namespace pbrt {
     }
 
     // Write FeatureVector data to file
+    std::cout << "Write FeatureVector data to file" << std::endl;
     visualizeSF(
       samplingFilm,
       camera->film->filename
