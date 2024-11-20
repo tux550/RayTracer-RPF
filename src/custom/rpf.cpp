@@ -17,9 +17,9 @@
 
 namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
-  STAT_COUNTER("Integrator/MaxNeighborhoodSize", maxNeighborhoodSize);
-  STAT_COUNTER("Integrator/MeanNeighborhoodSize", meanNeighborhoodSize);
-  STAT_COUNTER("Integrator/MinNeighborhoodSize", minNeighborhoodSize);
+  STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
+  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("Integrator/Neighborhood Size Pre Merge", neighborhoodSizePreMerge);
 
   STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
   STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -283,6 +283,12 @@ namespace pbrt {
     }
     LOG(INFO) << "Sampling finished";
 
+    for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
+      for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
+        ReportValue(samplesPerPixel, samplingFilm.samples[i][j].size());
+      }
+    }
+
     // Write FeatureVector data to file
     visualizeSF(
       samplingFilm,
@@ -309,19 +315,19 @@ namespace pbrt {
     SampleFMatrix pixelFstdDevMatrix(
       samplingFilm.getWidth(),
       SampleFVector(samplingFilm.getHeight(), SampleF())
-    );;
+    );
     ProgressReporter reporter_fstats(nTiles.x * nTiles.y, "Features Mean and StdDev");
     {
-      ParallelFor2D([&](Point2i pixel) {
-        // Compute sample bounds for tile
-        int x0 = sampleBounds.pMin.x + pixel.x;
-        int x1 = std::min(x0 + 1, sampleBounds.pMax.x);
-        int y0 = sampleBounds.pMin.y + pixel.y;
-        int y1 = std::min(y0 + 1, sampleBounds.pMax.y);
-        Bounds2i pixelBounds(Point2i(x0, y0), Point2i(x1, y1));
+      ParallelFor2D([&](Point2i tile) {
+        // Compute bounds for tile
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
 
         // Loop
-        for (Point2i pixel : pixelBounds) {
+        for (Point2i pixel : tileBounds) {
           // Get samples for pixel
           SampleDataSet samples = samplingFilm.getPixelSamples(pixel);
           // Get mean and stdDev for each feature
@@ -337,24 +343,23 @@ namespace pbrt {
     }
 
     // 1.2 Build Neighborhood and 1.3 Normalize
-
-    // Create Neighbourhood
-    SampleDataSetMatrix neighborhoodSamples(
-      samplingFilm.getWidth(),
-      SampleDataSetVector(samplingFilm.getHeight(), SampleDataSet())
-    );
+    SamplingFilm neighborhoodFilm(sampleBounds);
+  
     int box_size = 3;
     ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y, "BuildNeighborhood And Normalize");
     {
-      ParallelFor2D([&](Point2i pixel) {
+      ParallelFor2D([&](Point2i tile) {
         // Compute sample bounds for tile
-        int x0 = sampleBounds.pMin.x + pixel.x;
-        int x1 = std::min(x0 + 1, sampleBounds.pMax.x);
-        int y0 = sampleBounds.pMin.y + pixel.y;
-        int y1 = std::min(y0 + 1, sampleBounds.pMax.y);
-        Bounds2i pixelBounds(Point2i(x0, y0), Point2i(x1, y1));
+        int x0 = sampleBounds.pMin.x + tile.x * tileSize;
+        int x1 = std::min(x0 + tileSize, sampleBounds.pMax.x);
+        int y0 = sampleBounds.pMin.y + tile.y * tileSize;
+        int y1 = std::min(y0 + tileSize, sampleBounds.pMax.y);
+        Bounds2i tileBounds(Point2i(x0, y0), Point2i(x1, y1));
+        // Get neighborhoodFilm for tile
+        std::unique_ptr<SamplingTile> neighborhoodTile = neighborhoodFilm.GetSamplingTile(tileBounds);
         // Loop
-        for (Point2i pixel : pixelBounds) {
+        bool debugPrint = true;
+        for (Point2i pixel : tileBounds) {
           // Init with pixel samples
           auto neighborhood = samplingFilm.getPixelSamples(pixel);
           // Get surrounding pixels
@@ -380,11 +385,14 @@ namespace pbrt {
                   );
                 if (within3StdDevs) {
                   neighborhood.push_back(sf);
+                  if (debugPrint) {
+                    std::cout << "Added sample to neighborhood" << std::endl;
+                    debugPrint = false;
+                  }
                 }
               }
             }
           }
-
           // Normalize Neighborhood
           if (neighborhood.size() > 0) {
             // Get mean and stdDev for the full array
@@ -399,29 +407,26 @@ namespace pbrt {
               *it = it->normalized(mean, stdDev);
             }
           }
-
-          // Set neighborhood
-          neighborhoodSamples[pixel.x][pixel.y] = neighborhood;
+          // Report
+          ReportValue(neighborhoodSizePreMerge, neighborhood.size());
+          // Add samples to neighborhoodTile
+          for (const SampleData &sf : neighborhood) {
+            neighborhoodTile->addSample(pixel, sf);
+          }
         }
+        // Merge neighborhoodTile into neighborhoodFilm
+        neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));
       }, nTiles);
       reporter_build_neighborhood.Done();
     }
+    LOG(INFO) << "Neighborhood built";
     
     // Get stats of neighborhood sizes
-    int maxNSize = 0;
-    int minNSize = std::numeric_limits<int>::max();
-    int totalNSize = 0;
-    for (const auto &row : neighborhoodSamples) {
-      for (const auto &neighborhood : row) {
-        int nSize = neighborhood.size();
-        maxNSize = std::max(maxNSize, nSize);
-        minNSize = std::min(minNSize, nSize);
-        totalNSize += nSize;
+    for (size_t i = 0; i < neighborhoodFilm.samples.size(); ++i) {
+      for (size_t j = 0; j < neighborhoodFilm.samples[i].size(); ++j) {
+        ReportValue(neighborhoodSize, neighborhoodFilm.samples[i][j].size());
       }
     }
-    maxNeighborhoodSize = maxNSize;
-    minNeighborhoodSize = minNSize;
-    meanNeighborhoodSize = totalNSize / (samplingFilm.getWidth() * samplingFilm.getHeight());
 
 
 
