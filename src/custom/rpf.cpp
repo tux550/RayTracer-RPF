@@ -368,7 +368,7 @@ void RPFIntegrator::FillSampleFilm(
     }
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
-    /*
+
     std::vector<std::vector<double>> features_data;
     std::vector<std::vector<double>> positions_data;
     std::vector<std::vector<double>> colors_data;
@@ -401,6 +401,7 @@ void RPFIntegrator::FillSampleFilm(
       }
       random_data.push_back(ri_samples);
     }
+        /*
     // Compute mutual information
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       // For each pair feature x random compute mutual information
@@ -523,6 +524,12 @@ void RPFIntegrator::FillSampleFilm(
     SamplingFilm neighborhoodFilm(sampleBounds);
   
     int box_size = 3;// 35;
+    // Position variances depends on box size
+    // (The screen position variance sigma^2_p is set by the filter box size, such that the standard deviation sigma_p is one quarter the width of the box)
+    double sigma_p = box_size/4;
+    // Input variance for color and f
+    double sigma_fc_seed = 0.002;
+
     // Divide into tiles
     Point2i nTiles(
       (sampleExtent.x + tileSize - 1) / tileSize,
@@ -596,33 +603,51 @@ void RPFIntegrator::FillSampleFilm(
             neighborhoodTile->addSample(pixel, sf);
           }
 
-          // 3. COMPUTE STATISTICAL DEPENDENCY ESTIMATION
+          // 3. COMPUTE ALPHA AND BETA FACTORS
+          SampleC Alpha_k;
+          SampleF Beta_k;
+          ComputeCFWeights(
+            neighborhood,
+            Alpha_k,
+            Beta_k
+          );
 
-          // STATISTICAL DEPENDENCY ESTIMATION
-          if (debugPrint) {
-            debugPrint = false;
-            SampleC Alpha_k;
-            SampleF Beta_k;
-            // Compute
-            std::cout << "Computing CF Weights" << std::endl;
-            ComputeCFWeights(
-              neighborhood,
-              Alpha_k,
-              Beta_k
-            );
-            std::cout << "Finished Computing CF Weights" << std::endl;
-            // Print 
-            std::cout << "Alpha_k: ";
-            for (int i = 0; i < SD_N_COLOR; ++i) {
-              std::cout << Alpha_k[i] << " ";
+          // 4. WEIGHT THE SAMPLES
+          // Init sample weights as NxN
+          std::vector<std::vector<double>> weights_mat(
+            neighborhood.size(),
+            std::vector<double>(neighborhood.size(), 0)
+          );
+          
+          // Calculate wij for each pair of samples i,j
+          // wij =
+          //    exp(- SUM_k ((p_i,k - p_j,k)^2)) / (2 * sigma_p^2)   *
+          //    exp(- SUM_k ( ALPHA_k (c_i,k - c_j,k)^2)) / (2 * sigma_n^2)   *
+          //    exp(- SUM_k ( BETA_k  (f_i,k - f_j,k)^2)) / (2 * sigma_r^2) 
+          for (size_t i = 0; i < neighborhood.size(); ++i) {
+            for (size_t j = 0; j < neighborhood.size(); ++j) {
+              // Get samples
+              auto si = neighborhood[i];
+              auto sj = neighborhood[j];
+              // Get features
+              auto fi = si.getFeatures();
+              auto fj = sj.getFeatures();
+              // Get colors
+              auto ci = si.getColor();
+              auto cj = sj.getColor();
+              // Get positions
+              auto pi = si.getPosition();
+              auto pj = sj.getPosition();
+              // Calculate wij
+              
+              // (p_i,k - p_j,k)^2
+              auto p_square_diff = squareArray(subtractArrays(pi, pj));
+
+              // TODO
+
             }
-            std::cout << std::endl;
-            std::cout << "Beta_k: ";
-            for (int i = 0; i < SD_N_FEATURES; ++i) {
-              std::cout << Beta_k[i] << " ";
-            }
-            std::cout << std::endl;
           }
+          
         }
         // Merge neighborhoodTile into neighborhoodFilm
         neighborhoodFilm.MergeSamplingTile(std::move(neighborhoodTile));

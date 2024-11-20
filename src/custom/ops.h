@@ -77,6 +77,16 @@ std::array<T,N> subtractArrays(const std::array<T,N> &a, const std::array<T,N> &
   return result;
 }
 
+// Square of an array
+template <typename T, size_t N>
+std::array<T,N> squareArray(const std::array<T,N> &a) {
+  std::array<T,N> result;
+  for (size_t i = 0; i < N; ++i) {
+    result[i] = a[i] * a[i];
+  }
+  return result;
+}
+
 template <typename T, size_t N>
 bool allLessThan(const std::array<T,N> &a, const std::array<T,N> &b) {
   for (size_t i = 0; i < N; ++i) {
