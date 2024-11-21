@@ -21,6 +21,7 @@ namespace pbrt {
   STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
   STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
   STAT_INT_DISTRIBUTION("RPF/Neighborhood Size", neighborhoodSize);
+  STAT_INT_DISTRIBUTION("RPF/Adjusted color", adjustedColorDistribution);
   STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
   STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
 
@@ -463,10 +464,10 @@ void RPFIntegrator::FillSampleFilm(
       W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
       W_r_fk[i] = D_r_fk[i] / (D_r_fk[i] + D_p_fk[i]);
     }
-    // W [r][c,k] = D[r][c,k] / ( D[r][c] + D[p][c] )
+    // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-      W_r_ck[i] = D_r_ck[i] / (D_r_c + D_p_c);
+      W_r_ck[i] = D_r_ck[i] / (D_r_ck[i] + D_p_ck[i]);
     }
     // 4. Compute Alpha and Beta
     // Alpha_k = 1 - W[r][c,k]
@@ -697,6 +698,11 @@ void RPFIntegrator::FillSampleFilm(
               ReportValue(wijCjkSumDistribution, sum_w_c);
               ReportValue(cprimeikSumDistribution, sum_w_c / sum_w);
               double prime_color = sum_w_c / sum_w;
+              ReportValue(adjustedColorDistribution, prime_color);
+              if (std::isnan(prime_color) ) {
+                std::cout << "PRIME ERROR. Prime:" << prime_color << "| Sum WC: " <<  sum_w_c << " | Sum W:" << sum_w << std::endl;
+                exit(1);
+              }
 
               // TODO: REMOVE THIS CAPPING
               //if (prime_color < 0) {
