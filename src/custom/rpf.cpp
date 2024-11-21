@@ -412,76 +412,16 @@ void RPFIntegrator::FillSampleFilm(
     }
 
     // Compute mutual information
-
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       // For each pair feature x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
         auto mi_rf = MutualInformation(features_data[i], random_data[j]); 
-        if (std::isnan(mi_rf)) {
-          std::string msg = "MI RF is nan";
-          msg += " Feature Array: [";
-          for (auto x : features_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Random Array: [";
-          for (auto x : random_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-
-        }
         D_r_fk[i] += mi_rf;
-        // Validate D_r_fk
-        if (std::isnan(D_r_fk[i])) {
-          std::string msg = "D_r_fk is nan";
-          msg += " Feature Array: [";
-          for (auto x : features_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Random Array: [";
-          for (auto x : random_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
       }
       // For each pair feature x position compute mutual information
       for (int j = 0; j < SD_N_POSITION; ++j) {
         auto mi_fp = MutualInformation(features_data[i], positions_data[j]);
-        if (std::isnan(mi_fp)) {
-          std::string msg = "MI FP is nan";
-          msg += " Feature Array: [";
-          for (auto x : features_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Position Array: [";
-          for (auto x : positions_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
         D_p_fk[i] += mi_fp;
-        // Validate D_p_fk
-        if (std::isnan(D_p_fk[i])) {
-          std::string msg = "D_p_fk is nan";
-          msg += " Feature Array: [";
-          for (auto x : features_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Position Array: [";
-          for (auto x : positions_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
       }
     }
 
@@ -489,59 +429,43 @@ void RPFIntegrator::FillSampleFilm(
       // For each pair color x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
         auto mi_rc = MutualInformation(colors_data[i], random_data[j]);
-        if (std::isnan(mi_rc)) {
-          std::string msg = "MI RC is nan";
-          msg += " Color Array: [";
-          for (auto x : colors_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Random Array: [";
-          for (auto x : random_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
         D_r_ck[i] += mi_rc;
       }
       // For each pair color x position compute mutual information
       for (int j = 0; j < SD_N_POSITION; ++j) {
         auto mi_pc = MutualInformation(colors_data[i], positions_data[j]);
-        if (std::isnan(mi_pc)) {
-          std::string msg = "MI PC is nan";
-          msg += " Color Array: [";
-          for (auto x : colors_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Position Array: [";
-          for (auto x : positions_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
         D_p_ck[i] += mi_pc;
       }
       // For each pair color x feature compute mutual information
       for (int j = 0; j < SD_N_FEATURES; ++j) {
         auto mi_cf = MutualInformation(colors_data[i], features_data[j]);
-        if (std::isnan(mi_cf)) {
-          std::string msg = "MI CF is nan";
-          msg += " Color Array: [";
-          for (auto x : colors_data[i]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "] - Feature Array: [";
-          for (auto x : features_data[j]) {
-            msg += std::to_string(x) + ", ";
-          }
-          msg += "]\n";
-          std::cout << msg;
-          exit(1);
-        }
         D_f_ck[i] += mi_cf;
+      }
+    }
+
+    // Validate values inside D
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+      if (std::isnan(D_r_fk[i])) {
+        std::cout << "[x] D_r_fk is nan" << std::endl;
+        exit(1);
+      }
+      if (std::isnan(D_p_fk[i])) {
+        std::cout << "[x] D_p_fk is nan" << std::endl;
+        exit(1);
+      }
+    }
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+      if (std::isnan(D_r_ck[i])) {
+        std::cout << "[x] D_r_ck is nan" << std::endl;
+        exit(1);
+      }
+      if (std::isnan(D_p_ck[i])) {
+        std::cout << "[x] D_p_ck is nan" << std::endl;
+        exit(1);
+      }
+      if (std::isnan(D_f_ck[i])) {
+        std::cout << "[x] D_f_ck is nan" << std::endl;
+        exit(1);
       }
     }
 
@@ -566,21 +490,11 @@ void RPFIntegrator::FillSampleFilm(
     SampleF W_c_fk;
     SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-      W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
-      // Validate W_c_fk
-      if (std::isnan(W_c_fk[i])) {
-        // TODO: fix NaN
+      if (D_f_c + D_r_c + D_p_c == 0) {
         W_c_fk[i] = 0;
-        /*
-        std::string msg = "W_c_fk is nan";
-        msg += " D_f_ck: " + std::to_string(D_f_ck[i]);
-        msg += " D_f_c: " + std::to_string(D_f_c);
-        msg += " D_r_c: " + std::to_string(D_r_c);
-        msg += " D_p_c: " + std::to_string(D_p_c);
-        msg += "\n";
-        std::cout << msg;
-        exit(1);
-        */
+      }
+      else {
+        W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
       }
 
       if (D_r_fk[i] == 0) {
@@ -592,40 +506,35 @@ void RPFIntegrator::FillSampleFilm(
       }
 
       // Validate W_r_fk
-      if (std::isnan(W_r_fk[i])) {
-        // TODO: fix NaN
-        W_r_fk[i] = 0;
-        /*
-        std::string msg = "W_r_fk is nan";
-        msg += " D_r_fk: " + std::to_string(D_r_fk[i]);
-        msg += " D_p_fk: " + std::to_string(D_p_fk[i]);
-        msg += "\n";
-        std::cout << msg;
-        exit(1);
-        */
-      }
+
     }
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-      W_r_ck[i] = D_r_ck[i] / (D_r_ck[i] + D_p_ck[i]);
+      if (D_r_ck[i] == 0) {
+        if (D_p_ck[i] == 0) {
+          W_r_ck[i] = 0;
+        }
+        else {
+          W_r_ck[i] = 1;
+        }
+      }
+      else {
+        W_r_ck[i] = D_r_ck[i] / (D_r_ck[i] + D_p_ck[i]);
+      }
     }
     // 4. Compute Alpha and Beta
     // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
+      if (std::isnan(W_r_ck[i])) {
+        std::cout << "[x] W_r_ck is nan in Alpha_k[" << i << "]" << std::endl;
+        exit(1);
+      }
       Alpha_k[i] = 1 - W_r_ck[i];
     }
     // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       auto beta_k_i = (1 - W_r_fk[i]) * W_c_fk[i];
-      if (std::isnan(beta_k_i)) {
-        std::string msg = "Beta_k is nan";
-        msg += " W_r_fk: " + std::to_string(W_r_fk[i]);
-        msg += " W_c_fk: " + std::to_string(W_c_fk[i]);
-        msg += "\n";
-        std::cout << msg;
-        exit(1);
-      }
       Beta_k[i] = beta_k_i;
     }
     // Compute W_r_c

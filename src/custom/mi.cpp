@@ -100,12 +100,9 @@ double MutualInformation(const vector<double>& xData, const vector<double>& yDat
         }
     }
 
-    // If mi is nan
-    if (std::isnan(mi)) {
-        std::cout << "Mutual Information is nan" << std::endl;
-        mi = 0;
-        //exit(1);
-    }
+    //DEBUG: Set mi always to 0
+    mi = 0;
+
 
     return mi;
 }
