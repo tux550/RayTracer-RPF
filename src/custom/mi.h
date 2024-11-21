@@ -3,6 +3,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <string>
 using namespace std;
 
 vector<int> computeHistogram(const vector<double>& data, int bins, double minVal, double maxVal);

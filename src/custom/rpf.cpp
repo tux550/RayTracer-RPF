@@ -416,30 +416,135 @@ void RPFIntegrator::FillSampleFilm(
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       // For each pair feature x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
-        auto a = features_data[i];
-        auto b = random_data[j];
-        D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+        auto mi_rf = MutualInformation(features_data[i], random_data[j]); 
+        if (std::isnan(mi_rf)) {
+          std::string msg = "MI RF is nan";
+          msg += " Feature Array: [";
+          for (auto x : features_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Random Array: [";
+          for (auto x : random_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+
+        }
+        D_r_fk[i] += mi_rf;
+        // Validate D_r_fk
+        if (std::isnan(D_r_fk[i])) {
+          std::string msg = "D_r_fk is nan";
+          msg += " Feature Array: [";
+          for (auto x : features_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Random Array: [";
+          for (auto x : random_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
       }
       // For each pair feature x position compute mutual information
       for (int j = 0; j < SD_N_POSITION; ++j) {
-        D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+        auto mi_fp = MutualInformation(features_data[i], positions_data[j]);
+        if (std::isnan(mi_fp)) {
+          std::string msg = "MI FP is nan";
+          msg += " Feature Array: [";
+          for (auto x : features_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Position Array: [";
+          for (auto x : positions_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
+        D_p_fk[i] += mi_fp;
+        // Validate D_p_fk
+        if (std::isnan(D_p_fk[i])) {
+          std::string msg = "D_p_fk is nan";
+          msg += " Feature Array: [";
+          for (auto x : features_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Position Array: [";
+          for (auto x : positions_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
       }
     }
 
     for (int i = 0; i < SD_N_COLOR; ++i) {
       // For each pair color x random compute mutual information
       for (int j = 0; j < SD_N_RANDOM; ++j) {
-        D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
+        auto mi_rc = MutualInformation(colors_data[i], random_data[j]);
+        if (std::isnan(mi_rc)) {
+          std::string msg = "MI RC is nan";
+          msg += " Color Array: [";
+          for (auto x : colors_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Random Array: [";
+          for (auto x : random_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
+        D_r_ck[i] += mi_rc;
       }
       // For each pair color x position compute mutual information
       for (int j = 0; j < SD_N_POSITION; ++j) {
-        D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
+        auto mi_pc = MutualInformation(colors_data[i], positions_data[j]);
+        if (std::isnan(mi_pc)) {
+          std::string msg = "MI PC is nan";
+          msg += " Color Array: [";
+          for (auto x : colors_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Position Array: [";
+          for (auto x : positions_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
+        D_p_ck[i] += mi_pc;
       }
       // For each pair color x feature compute mutual information
       for (int j = 0; j < SD_N_FEATURES; ++j) {
-        D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
+        auto mi_cf = MutualInformation(colors_data[i], features_data[j]);
+        if (std::isnan(mi_cf)) {
+          std::string msg = "MI CF is nan";
+          msg += " Color Array: [";
+          for (auto x : colors_data[i]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "] - Feature Array: [";
+          for (auto x : features_data[j]) {
+            msg += std::to_string(x) + ", ";
+          }
+          msg += "]\n";
+          std::cout << msg;
+          exit(1);
+        }
+        D_f_ck[i] += mi_cf;
       }
     }
+
 
 
     // 2. Dependencies of color x feature, color x position, and feature x position
@@ -462,7 +567,43 @@ void RPFIntegrator::FillSampleFilm(
     SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
       W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
-      W_r_fk[i] = D_r_fk[i] / (D_r_fk[i] + D_p_fk[i]);
+      // Validate W_c_fk
+      if (std::isnan(W_c_fk[i])) {
+        // TODO: fix NaN
+        W_c_fk[i] = 0;
+        /*
+        std::string msg = "W_c_fk is nan";
+        msg += " D_f_ck: " + std::to_string(D_f_ck[i]);
+        msg += " D_f_c: " + std::to_string(D_f_c);
+        msg += " D_r_c: " + std::to_string(D_r_c);
+        msg += " D_p_c: " + std::to_string(D_p_c);
+        msg += "\n";
+        std::cout << msg;
+        exit(1);
+        */
+      }
+
+      if (D_r_fk[i] == 0) {
+        // TODO: What is the correct way to handle this?
+        W_r_fk[i] = 0;
+      }
+      else {
+        W_r_fk[i] = D_r_fk[i] / (D_r_fk[i] + D_p_fk[i]);
+      }
+
+      // Validate W_r_fk
+      if (std::isnan(W_r_fk[i])) {
+        // TODO: fix NaN
+        W_r_fk[i] = 0;
+        /*
+        std::string msg = "W_r_fk is nan";
+        msg += " D_r_fk: " + std::to_string(D_r_fk[i]);
+        msg += " D_p_fk: " + std::to_string(D_p_fk[i]);
+        msg += "\n";
+        std::cout << msg;
+        exit(1);
+        */
+      }
     }
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
@@ -476,12 +617,32 @@ void RPFIntegrator::FillSampleFilm(
     }
     // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-      Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
+      auto beta_k_i = (1 - W_r_fk[i]) * W_c_fk[i];
+      if (std::isnan(beta_k_i)) {
+        std::string msg = "Beta_k is nan";
+        msg += " W_r_fk: " + std::to_string(W_r_fk[i]);
+        msg += " W_c_fk: " + std::to_string(W_c_fk[i]);
+        msg += "\n";
+        std::cout << msg;
+        exit(1);
+      }
+      Beta_k[i] = beta_k_i;
     }
     // Compute W_r_c
     // W [r][c] = 1/3 (W [r][c,1] + W [r][c,2] + W [r][c,3])
     W_r_c = 0;
     for (int i = 0; i < SD_N_COLOR; ++i) {
+      if (std::isnan(W_r_ck[i])) {
+        // TODO: Fix Nan
+        W_r_ck[i] = 0;
+        /*
+        std::string msg = "W_r_ck is nan";
+        msg += " W_r_ck: " + std::to_string(W_r_ck[i]);
+        msg += "\n";
+        std::cout << msg;
+        exit(1);*/
+      }
+
       W_r_c += W_r_ck[i];
     }
     W_r_c /= SD_N_COLOR;
@@ -622,6 +783,24 @@ void RPFIntegrator::FillSampleFilm(
             W_r_c
           );
 
+          // Validate Alpha_k, Beta_k, W_r_c
+          if (std::isnan(W_r_c)) {
+            std::cout << "W_r_c is nan" << std::endl;
+            exit(1);
+          }
+          for (int i = 0; i < SD_N_COLOR; ++i) {
+            if (std::isnan(Alpha_k[i])) {
+              std::cout << "Alpha_k[" << i << "] is nan" << std::endl;
+              exit(1);
+            }
+          }
+          for (int i = 0; i < SD_N_FEATURES; ++i) {
+            if (std::isnan(Beta_k[i])) {
+              std::cout << "Beta_k[" << i << "] is nan" << std::endl;
+              exit(1);
+            }
+          }
+
           // 4. WEIGHT THE SAMPLES
           // Init sample weights as PxN
           std::vector<std::vector<double>> weights_mat(
@@ -659,15 +838,28 @@ void RPFIntegrator::FillSampleFilm(
 
               // Compute sigmas
               // sigma_f^2 = sigma_c^2 = sigma_fc_seed^2 / (1 - W_r_c)^2
-              double sigma_c_squared = sigma_fc_seed * sigma_fc_seed / (1 - W_r_c) / (1 - W_r_c);
+              double sigma_c_squared = sigma_fc_seed * sigma_fc_seed / ((1 - W_r_c)*(1 - W_r_c));
               double sigma_f_squared = sigma_c_squared;
               double sigma_p_squared = sigma_p * sigma_p;
+
+              // Detect any of the sigmas is nan
+              if (std::isnan(sigma_c_squared) || std::isnan(sigma_f_squared) || std::isnan(sigma_p_squared)) {
+                std::cout << "SIGMA ERROR. Sigma_c^2:" << sigma_c_squared << "| Sigma_f^2:" << sigma_f_squared << "| Sigma_p^2:" << sigma_p_squared << std::endl;
+                exit(1);
+              }
+              
 
               // Calculate wij
               double wij = 
                 exp(-sumArray(p_square_diff) / (2 * sigma_p_squared)) *
                 exp(-sumArray(multiplyArrays(c_square_diff, Alpha_k)) / (2 * sigma_c_squared)) *
                 exp(-sumArray(multiplyArrays(f_square_diff, Beta_k)) / (2 * sigma_f_squared));
+              
+              // Validate wij
+              if (std::isnan(wij)) {
+                std::cout << "WIJ ERROR. Wij:" << wij << "| P Square Diff Sum: " <<  sumArray(p_square_diff) << " | C Square Diff Sum: " << sumArray(c_square_diff) << " | F Square Diff Sum: " << sumArray(f_square_diff) << std::endl;
+                exit(1);
+              }
 
               // Save wij
               weights_mat[i][j] = wij;

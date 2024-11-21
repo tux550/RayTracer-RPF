@@ -64,6 +64,10 @@ double MutualInformation(const vector<double>& xData, const vector<double>& yDat
 
     // Step 4: Compute total number of samples
     double totalSamples = xData.size();
+    if (totalSamples == 0) {
+        std::cout << "No samples to compute mutual information" << std::endl;
+        return 0.0;
+    }
 
     // Step 5: Calculate marginal probabilities
     vector<double> probX(binsX), probY(binsY);
@@ -81,9 +85,26 @@ double MutualInformation(const vector<double>& xData, const vector<double>& yDat
             double pXY = jointHist[i][j] / totalSamples;
             double probXtimesY = probX[i] * probY[j]; // Division By Zero check
             if (pXY > 0 && probXtimesY!=0) {
-                mi += pXY * log(pXY / probXtimesY);
+                auto logVal = log(pXY / probXtimesY);
+                if  (std::isnan(logVal)) {
+                    std::string msg = "Log value is nan";
+                    msg += " pXY: " + std::to_string(pXY);
+                    msg += " probXtimesY: " + std::to_string(probXtimesY);
+                    msg += "\n";
+                    std::cout << msg;
+                    exit(1);
+                }
+
+                mi += pXY * logVal;
             }
         }
+    }
+
+    // If mi is nan
+    if (std::isnan(mi)) {
+        std::cout << "Mutual Information is nan" << std::endl;
+        mi = 0;
+        //exit(1);
     }
 
     return mi;
