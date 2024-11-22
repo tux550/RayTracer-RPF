@@ -1,10 +1,11 @@
-// custom/mi.cpp*
 #include "custom/mi.h"
 
+#include <vector>
+
 // Function to compute the histogram of a data vector
-vector<int> computeHistogram(const vector<double>& data, int bins,
-                             double minVal, double maxVal) {
-    vector<int> hist(bins, 0);
+std::vector<int> computeHistogram(const std::vector<double>& data, int bins,
+                                  double minVal, double maxVal) {
+    std::vector<int> hist(bins, 0);
     if (maxVal == minVal) {
         // If all data points are identical, dump all in first
         hist[0] = data.size();
@@ -21,12 +22,10 @@ vector<int> computeHistogram(const vector<double>& data, int bins,
 }
 
 // Function to compute the joint histogram of two data vectors
-vector<vector<int>> computeJointHistogram(const vector<double>& xData,
-                                          const vector<double>& yData,
-                                          int binsX, int binsY, double minX,
-                                          double maxX, double minY,
-                                          double maxY) {
-    vector<vector<int>> jointHist(binsX, vector<int>(binsY, 0));
+std::vector<std::vector<int>> computeJointHistogram(
+    const std::vector<double>& xData, const std::vector<double>& yData,
+    int binsX, int binsY, double minX, double maxX, double minY, double maxY) {
+    std::vector<std::vector<int>> jointHist(binsX, std::vector<int>(binsY, 0));
 
     for (size_t i = 0; i < xData.size(); ++i) {
         int binX = 0;
@@ -50,8 +49,9 @@ vector<vector<int>> computeJointHistogram(const vector<double>& xData,
 
 // Function to compute the mutual information between two continuous variables X
 // and Y
-double MutualInformation(const vector<double>& xData,
-                         const vector<double>& yData, int binsX, int binsY) {
+double MutualInformation(const std::vector<double>& xData,
+                         const std::vector<double>& yData, int binsX,
+                         int binsY) {
     // Step 1: Determine the range of the data
     double minX = *min_element(xData.begin(), xData.end());
     double maxX = *max_element(xData.begin(), xData.end());
@@ -71,16 +71,16 @@ double MutualInformation(const vector<double>& xData,
     }
 
     // Step 3: Compute histograms
-    vector<int> histX = computeHistogram(xData, binsX, minX, maxX);
-    vector<int> histY = computeHistogram(yData, binsY, minY, maxY);
-    vector<vector<int>> jointHist = computeJointHistogram(
+    std::vector<int> histX = computeHistogram(xData, binsX, minX, maxX);
+    std::vector<int> histY = computeHistogram(yData, binsY, minY, maxY);
+    std::vector<std::vector<int>> jointHist = computeJointHistogram(
         xData, yData, binsX, binsY, minX, maxX, minY, maxY);
 
     // Step 4: Compute total number of samples
     double totalSamples = xData.size();
 
     // Step 5: Calculate marginal probabilities
-    vector<double> probX(binsX), probY(binsY);
+    std::vector<double> probX(binsX), probY(binsY);
     for (int i = 0; i < binsX; ++i) {
         probX[i] = histX[i] / totalSamples;
     }
