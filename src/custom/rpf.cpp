@@ -737,10 +737,44 @@ void RPFIntegrator::Render(const Scene &scene) {
     Vector2i sampleExtent = sampleBounds.Diagonal();
     // Divide into tiles
     const int tileSize = 16;
+
     // Init and Fill SamplingFilm
     std::cout << "Init and Fill SamplingFilm" << std::endl;
     SamplingFilm samplingFilm(sampleBounds);
     FillSampleFilm(samplingFilm, scene, tileSize);
+
+    // Save unfiltered image
+    {
+        std::string original_filename = camera->film->filename;
+
+        std::string const unfiltered_suffix = "_unfiltered";
+
+        size_t ext_pos = camera->film->filename.find_last_of(".");
+        if (ext_pos != std::string::npos) {
+            camera->film->filename.insert(ext_pos, unfiltered_suffix);
+        }
+
+        // Create and fill unfiltered tile
+        std::unique_ptr<FilmTile> unfiltered_tile =
+            camera->film->GetFilmTile(sampleBounds);
+
+        for (int x = 0; x < sampleExtent.x; ++x) {
+            for (int y = 0; y < sampleExtent.y; ++y) {
+                for (const SampleData &sf : samplingFilm.samples[x][y]) {
+                    unfiltered_tile->AddSample(sf.getPFilm(), sf.getL(),
+                                               sf.rayWeight);
+                }
+            }
+        }
+
+        camera->film->MergeFilmTile(std::move(unfiltered_tile));
+        camera->film->WriteImage();
+
+        // Restore original filename
+        camera->film->filename = original_filename;
+
+        camera->film->Clear();
+    }
 
     for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
         for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
