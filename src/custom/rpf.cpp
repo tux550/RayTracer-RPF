@@ -331,22 +331,6 @@ void RPFIntegrator::FillMeanAndStddev(const SamplingFilm &samplingFilm,
 void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
                                      SampleC &Alpha_k, SampleF &Beta_k,
                                      double &W_r_c) {
-    // Init dependencies
-    SampleF D_r_fk;  // D[r][f,k] = SUM_l MutualInformation(f_k, r_l)
-    SampleF D_p_fk;  // D[p][f,k] = SUM_l MutualInformation(f_k, p_l)
-    SampleC D_r_ck;  // D[r][c,k] = SUM_l MutualInformation(c_k, r_l)
-    SampleC D_p_ck;  // D[p][c,k] = SUM_l MutualInformation(c_k, p_l)
-    SampleC D_f_ck;  // D[f][c,k] = SUM_l MutualInformation(c_k, f_l)
-    // Init to 0
-    for (size_t i = 0; i < SD_N_FEATURES; ++i) {
-        D_r_fk[i] = 0;
-        D_p_fk[i] = 0;
-    }
-    for (size_t i = 0; i < SD_N_COLOR; ++i) {
-        D_r_ck[i] = 0;
-        D_p_ck[i] = 0;
-        D_f_ck[i] = 0;
-    }
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 
@@ -354,6 +338,7 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     std::vector<std::vector<double>> positions_data;
     std::vector<std::vector<double>> colors_data;
     std::vector<std::vector<double>> random_data;
+
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         std::vector<double> fi_samples;
         for (const SampleData &sd : neighborhood) {
@@ -385,16 +370,37 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
 
     // Compute mutual information
 
+    // Init dependencies
+    SampleF D_r_fk;  // D[r][f,k] = SUM_l MutualInformation(f_k, r_l)
+    SampleF D_p_fk;  // D[p][f,k] = SUM_l MutualInformation(f_k, p_l)
+    SampleF D_fk_c;
+    for (size_t i = 0; i < SD_N_FEATURES; ++i) {
+        D_r_fk[i] = 0;
+        D_p_fk[i] = 0;
+        D_fk_c[i] = 0;
+    }
+
+    SampleC D_r_ck;  // D[r][c,k] = SUM_l MutualInformation(c_k, r_l)
+    SampleC D_p_ck;  // D[p][c,k] = SUM_l MutualInformation(c_k, p_l)
+    SampleC D_f_ck;  // D[f][c,k] = SUM_l MutualInformation(c_k, f_l)
+    for (size_t i = 0; i < SD_N_COLOR; ++i) {
+        D_r_ck[i] = 0;
+        D_p_ck[i] = 0;
+        D_f_ck[i] = 0;
+    }
+
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            auto a = features_data[i];
-            auto b = random_data[j];
             D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
         }
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
             D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+        }
+
+        for (int j = 0; j < SD_N_COLOR; ++j) {
+            D_fk_c[i] += MutualInformation(features_data[i], colors_data[j]);
         }
     }
 
@@ -431,14 +437,15 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     SampleF W_c_fk;
     SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        W_c_fk[i] = D_f_ck[i] / (D_f_c + D_r_c + D_p_c);
-        W_r_fk[i] = D_r_fk[i] / (D_r_fk[i] + D_p_fk[i]);
+        W_c_fk.at(i) = D_fk_c.at(i) / (D_f_c + D_r_c + D_p_c);
+        W_r_fk.at(i) = D_r_fk.at(i) / (D_r_fk.at(i) + D_p_fk.at(i));
     }
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
         W_r_ck[i] = D_r_ck[i] / (D_r_ck[i] + D_p_ck[i]);
     }
+
     // 4. Compute Alpha and Beta
     // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
