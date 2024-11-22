@@ -36,10 +36,10 @@ typedef std::array<SampleC, 2> SampleCR;
 // Color x Position
 typedef std::array<SampleC, 2> SampleCP;
 
-const size_t SD_N_FEATURES = 12;
-const size_t SD_N_POSITION = 2;
-const size_t SD_N_RANDOM = 2;
-const size_t SD_N_COLOR = 3;
+constexpr size_t SD_N_FEATURES = 12;
+constexpr size_t SD_N_POSITION = 2;
+constexpr size_t SD_N_RANDOM = 2;
+constexpr size_t SD_N_COLOR = 3;
 
 // Types
 typedef std::array<double, 19> SampleFullArray;
