@@ -8,47 +8,38 @@
 
 // custom/rpf.h*
 #include <vector>
-#include "visualization/vis.h"
-#include "custom/sd.h"
+
+#include "camera.h"
 #include "custom/ops.h"
 #include "custom/sample_film.h"
-#include "pbrt.h"
+#include "custom/sd.h"
 #include "integrator.h"
-#include "camera.h"
-#include "scene.h"
 #include "lightdistrib.h"
-
-
+#include "pbrt.h"
+#include "scene.h"
+#include "visualization/vis.h"
 
 namespace pbrt {
 // Visualization
-void visualizeSD(const SampleDataSetMatrix  &sdMat, const std::string &filename);
+void visualizeSD(const SampleDataSetMatrix &sdMat, const std::string &filename);
 
 // RPFIntegrator
 class RPFIntegrator : public Integrator {
   public:
     // RPFIntegrator Public Methods
-    RPFIntegrator(
-      int maxDepth,
-      std::shared_ptr<const Camera> camera,
-      std::shared_ptr<Sampler> sampler,
-      const Bounds2i &pixelBounds,
-      Float rrThreshold = 1,
-      const std::string &lightSampleStrategy = "spatial"
-    );
+    RPFIntegrator(int maxDepth, std::shared_ptr<const Camera> camera,
+                  std::shared_ptr<Sampler> sampler, const Bounds2i &pixelBounds,
+                  Float rrThreshold = 1,
+                  const std::string &lightSampleStrategy = "spatial");
     void Preprocess(const Scene &scene, Sampler &sampler);
     void Render(const Scene &scene);
-    void Li(
-      const RayDifferential &ray,
-      const Scene &scene,
-      Sampler &sampler,
-      MemoryArena &arena,
-      SampleData &sf,
-      int depth = 0
-    ) const;
+    void Li(const RayDifferential &ray, const Scene &scene, Sampler &sampler,
+            MemoryArena &arena, SampleData &sf, int depth = 0) const;
+
   protected:
     // RPFIntegrator Protected Data
     std::shared_ptr<const Camera> camera;
+
   private:
     // RPFIntegrator Private Data
     const int maxDepth;
@@ -59,50 +50,34 @@ class RPFIntegrator : public Integrator {
     std::shared_ptr<Sampler> sampler;
     const Bounds2i pixelBounds;
     // Utility functions
-    void getXStatsPerPixel(
-      const SampleDataSetMatrix &samples,
-      SampleXMatrix &meanMatrix,
-      SampleXMatrix &stdDevMatrix
-    );  
+    void getXStatsPerPixel(const SampleDataSetMatrix &samples,
+                           SampleXMatrix &meanMatrix,
+                           SampleXMatrix &stdDevMatrix);
 
     SampleDataSetMatrix getNeighborhoodSamples(
-      const SampleDataSetMatrix &samples,
-      const SampleFMatrix &meanMatrix,
-      const SampleFMatrix &stdDevMatrix,
-      size_t box_size // Always odd
+        const SampleDataSetMatrix &samples, const SampleFMatrix &meanMatrix,
+        const SampleFMatrix &stdDevMatrix,
+        size_t box_size  // Always odd
     );
 
-    void FillSampleFilm(
-      SamplingFilm &samplingFilm,
-      const Scene &scene,
-      const int tileSize);
-    void FillMeanAndStddev(
-      const SamplingFilm &samplingFilm,
-      SampleFMatrix &pixelFmeanMatrix,
-      SampleFMatrix &pixelFstdDevMatrix,
-      const int tileSize);
+    void FillSampleFilm(SamplingFilm &samplingFilm, const Scene &scene,
+                        const int tileSize);
+    void FillMeanAndStddev(const SamplingFilm &samplingFilm,
+                           SampleFMatrix &pixelFmeanMatrix,
+                           SampleFMatrix &pixelFstdDevMatrix,
+                           const int tileSize);
 
-    void ComputeCFWeights(
-    const SampleDataSet& neighborhood,
-    SampleC &Alpha_k,
-    SampleF &Beta_k,
-    double &W_r_c
-  );
-  void ApplyRPFFilter(
-    SamplingFilm &samplingFilm,
-    const int tileSize,
-    int box_size //= 3;
-  );
+    void ComputeCFWeights(const SampleDataSet &neighborhood, SampleC &Alpha_k,
+                          SampleF &Beta_k, double &W_r_c);
+    void ApplyRPFFilter(SamplingFilm &samplingFilm, const int tileSize,
+                        int box_size  //= 3;
+    );
 };
 
-RPFIntegrator *CreateRPFIntegrator(
-  const ParamSet &params,
-  std::shared_ptr<Sampler> sampler,
-  std::shared_ptr<const Camera> camera
-); 
+RPFIntegrator *CreateRPFIntegrator(const ParamSet &params,
+                                   std::shared_ptr<Sampler> sampler,
+                                   std::shared_ptr<const Camera> camera);
 
-}
-
-
+}  // namespace pbrt
 
 #endif  // PBRT_INTEGRATORS_RPF_PATH_H
