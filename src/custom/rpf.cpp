@@ -27,10 +27,9 @@ STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Color deltas", colorDeltaDistribution);
 
-
-//STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
-//STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
-//STAT_FLOAT_DISTRIBUTION("RPF/cprime_ik sum", cprimeikSumDistribution);
+// STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
+// STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
+// STAT_FLOAT_DISTRIBUTION("RPF/cprime_ik sum", cprimeikSumDistribution);
 
 STAT_PERCENT("Integrator/Zero-radiance paths", zeroRadiancePaths, totalPaths);
 STAT_INT_DISTRIBUTION("Integrator/Path length", pathLength);
@@ -265,10 +264,11 @@ void RPFIntegrator::FillSampleFilm(SamplingFilm &samplingFilm,
                         auto testvec = sf.getFullArray();
                         for (auto i = 0; i < testvec.size(); ++i) {
                             if (std::isnan(testvec[i])) {
-                              std::string msg = "NaN detected in SampleData: ";
-                              msg += std::to_string(i);
-                              msg += "\n";
-                              std::cout << msg;
+                                std::string msg =
+                                    "NaN detected in SampleData: ";
+                                msg += std::to_string(i);
+                                msg += "\n";
+                                std::cout << msg;
                             }
                         }
 
@@ -468,12 +468,12 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-      auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i);
-      if (D_rp_ck_sum == 0) {
-        W_r_ck.at(i) = 0;
-      } else {
-        W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
-      }
+        auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i);
+        if (D_rp_ck_sum == 0) {
+            W_r_ck.at(i) = 0;
+        } else {
+            W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
+        }
     }
 
     // 4. Compute Alpha and Beta
@@ -661,7 +661,8 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                             auto pj = sj.getPosition();
                             // TODO: Remove debug
                             // Get unnormed features
-                            auto fi_unnormed = original_samples[i].getFeatures();
+                            auto fi_unnormed =
+                                original_samples[i].getFeatures();
                             auto fj_unnormed = neighborhood[j].getFeatures();
 
                             // Calculate wij
@@ -679,7 +680,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                             // Validate FSQUARE DIFF
                             if (std::isnan(sumArray(f_square_diff))) {
                                 // TODO: fix
-   
+
                                 std::string msg;
                                 msg += "FSQUARE DIFF IS NAN. ";
                                 msg += "NORMED: \n";
@@ -704,16 +705,14 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                 msg += "\n";
                                 std::cout << msg;
                                 exit(1);
-                                
                             }
-
 
                             // Compute sigmas
                             // sigma_f^2 = sigma_c^2 = sigma_fc_seed^2 / (1 -
                             // W_r_c)^2
-                            double sigma_c_squared = (sigma_fc_seed *
-                                                     sigma_fc_seed) /
-                                                     ( (1 - W_r_c) * (1 - W_r_c) );
+                            double sigma_c_squared =
+                                (sigma_fc_seed * sigma_fc_seed) /
+                                ((1 - W_r_c) * (1 - W_r_c));
                             double sigma_f_squared = sigma_c_squared;
                             double sigma_p_squared = sigma_p * sigma_p;
 
@@ -739,15 +738,17 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                        std::to_string(sumArray(p_square_diff)) +
                                        " |\n ";
                                 msg += "C Square Diff: " +
-                                        std::to_string(sumArray(c_square_diff)) +
-                                        " |\n ";
+                                       std::to_string(sumArray(c_square_diff)) +
+                                       " |\n ";
                                 msg += "F Square Diff: " +
-                                        std::to_string(sumArray(f_square_diff)) +
-                                        " |\n ";
-                                msg += "Alpha: " + std::to_string(sumArray(Alpha_k)) +
-                                        " |\n ";
-                                msg += "Beta: " + std::to_string(sumArray(Beta_k)) +
-                                        " |\n ";
+                                       std::to_string(sumArray(f_square_diff)) +
+                                       " |\n ";
+                                msg += "Alpha: " +
+                                       std::to_string(sumArray(Alpha_k)) +
+                                       " |\n ";
+                                msg += "Beta: " +
+                                       std::to_string(sumArray(Beta_k)) +
+                                       " |\n ";
                                 std::cout << msg + "---\n ";
                                 exit(1);
                             }
@@ -776,9 +777,9 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                             neighborhood[j].getColorI(k));
                             }
                             // Reoport
-                            //ReportValue(wijSumDistribution, sum_w);
-                            //ReportValue(wijCjkSumDistribution, sum_w_c);
-                            //ReportValue(cprimeikSumDistribution,
+                            // ReportValue(wijSumDistribution, sum_w);
+                            // ReportValue(wijCjkSumDistribution, sum_w_c);
+                            // ReportValue(cprimeikSumDistribution,
                             //            sum_w_c / sum_w);
                             double prime_color = sum_w_c / sum_w;
                             ReportValue(adjustedColorDistribution, prime_color);
@@ -790,7 +791,8 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                 exit(1);
                             }
                             // Calc diff
-                            auto color_delta = prime_color - original_samples[i].getColorI(k);
+                            auto color_delta =
+                                prime_color - original_samples[i].getColorI(k);
                             ReportValue(colorDeltaDistribution, color_delta);
                             // Blend
                             original_samples[i].setColorI(k, prime_color);
@@ -802,7 +804,6 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                             // if (prime_color > 300) {
                             //  prime_color = 1;
                             //}
-
                         }
                     }
 
@@ -881,7 +882,8 @@ void RPFIntegrator::Render(const Scene &scene) {
 
     // Apply RPF Filter
     std::cout << "Apply RPF Filter" << std::endl;
-    std::vector<int> box_sizes = {7}; //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
+    std::vector<int> box_sizes = {
+        7};  //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
     for (int box_size : box_sizes) {
         std::cout << "Applying RPF Filter with box size " << box_size
                   << std::endl;

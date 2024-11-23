@@ -137,7 +137,8 @@ std::array<T, N> getStdDev(const std::vector<std::array<T, N>> &vectors,
     // Calculate stdDev
     for (size_t i = 0; i < num_samples; ++i) {
         // stdDev += (vectors[i] - mean)^2
-        stdDev = sumArrays(stdDev, squareArray(subtractArrays(vectors[i], mean)));
+        stdDev =
+            sumArrays(stdDev, squareArray(subtractArrays(vectors[i], mean)));
     }
     for (size_t i = 0; i < num_features; ++i) {
         stdDev[i] = std::sqrt(stdDev[i] / num_samples);
