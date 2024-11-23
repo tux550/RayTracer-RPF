@@ -131,13 +131,26 @@ std::array<T, N> getStdDev(const std::vector<std::array<T, N>> &vectors,
     size_t num_features = vectors[0].size();
     // Init in 0
     std::array<T, N> stdDev = std::array<T, N>();
+    for (size_t i = 0; i < N; ++i) {
+        stdDev[i] = 0;
+    }
     // Calculate stdDev
+    for (size_t i = 0; i < num_samples; ++i) {
+        // stdDev += (vectors[i] - mean)^2
+        stdDev = sumArrays(stdDev, squareArray(subtractArrays(vectors[i], mean)));
+    }
+    for (size_t i = 0; i < num_features; ++i) {
+        stdDev[i] = std::sqrt(stdDev[i] / num_samples);
+    }
+
+    /*
     for (size_t i = 0; i < num_samples; ++i) {
         stdDev = sumArrays(stdDev, multiplyArrays(vectors[i], vectors[i]));
     }
     for (size_t j = 0; j < num_features; ++j) {
         stdDev[j] = std::sqrt(stdDev[j] / num_samples - mean[j] * mean[j]);
     }
+    */
     return stdDev;
 }
 

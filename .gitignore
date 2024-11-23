@@ -6,3 +6,5 @@ src/objs
 .vscode/
 
 /output/
+build/
+venv/

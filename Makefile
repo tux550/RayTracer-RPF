@@ -1,19 +1,45 @@
-IMAGE_NAME = pbrt-v3
-IMAGE_VERSION = 1.0
-IMAGE_TAG = $(IMAGE_NAME):$(IMAGE_VERSION)
+# Variables
+image_name := pbrt-rpf
+image_version := 0.1
+image_tag := $(image_name):$(image_version)
 
-DEV_CONTAINER_NAME = pbrt-v3-dev
+# Default target
+default: build
 
-CONTAINER_WORK_DIR = /app
-HOST_OUTPUT_DIR = $(shell pwd)/output
-CONTAINER_OUTPUT_DIR = $(CONTAINER_WORK_DIR)/output
+# Directories
+ensure-build:
+	mkdir -p build/
 
-run:
+ensure-output:
+	mkdir -p output/
+
+# Cleaning
+clean:
+	rm -rf build/
+
+# Generate build files with CMake
+cmake-gen: ensure-build
+	cd build && cmake -G 'Unix Makefiles' ..
+
+# Build
+build: ensure-build
+	cd build && make -j8
+
+# Run
+run: ensure-output
 	./build/pbrt scenes/sample.pbrt
 	mv *.exr output/
+	chmod a+rwx -R output
+
+# Docker build
 build-image:
-	docker build -t $(IMAGE_TAG) .
+	docker build -t $(image_tag) .
+
+# Enter Docker container
 shell:
-	docker run -it --rm -w $(CONTAINER_WORK_DIR) -v $(HOST_OUTPUT_DIR):$(CONTAINER_OUTPUT_DIR) $(IMAGE_TAG)  /bin/bash
-clean:
-	rm -rf output/*.exr
+	docker run -it --rm -w /pbrt -v $(shell pwd):/pbrt $(image_tag) /bin/bash
+
+# Tests (placeholder)
+test:
+	@echo "Nothing yet"
+	# ./pbrt_test
