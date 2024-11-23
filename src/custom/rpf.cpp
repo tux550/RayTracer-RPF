@@ -16,6 +16,8 @@
 #include "scene.h"
 #include "stats.h"
 
+#define RPF_EPSILON 0.0001
+
 namespace pbrt {
 STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
 STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
@@ -25,7 +27,24 @@ STAT_FLOAT_DISTRIBUTION("RPF/Input color", inputColorDistribution);
 STAT_INT_DISTRIBUTION("RPF/Adjusted color", adjustedColorDistribution);
 STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/NonSelf Weight (wij)", nonSelfWijDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Color deltas", colorDeltaDistribution);
+
+STAT_FLOAT_DISTRIBUTION("RPF/PLens0", rpLens0Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/PLens1", rpLens1Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/W{r,0}{c,k}", wr0ckDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/W{r,1}{c,k}", wr1ckDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/W{r,2}{c,k}", wr2ckDistribution);
+
+STAT_FLOAT_DISTRIBUTION("RPF/NonSelf Factor0",nonSelfFactor0Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/NonSelf Factor1", nonSelfFactor1Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/NonSelf Factor2", nonSelfFactor2Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/Factor0", factor0Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/Factor1", factor1Distribution);
+STAT_FLOAT_DISTRIBUTION("RPF/Factor2", factor2Distribution);
+
+STAT_FLOAT_DISTRIBUTION("RPF/Mutual Information", mutualInformationDistribution);
+
 
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
@@ -177,8 +196,9 @@ SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
                         auto sfVec = sf.getFeatures();
                         bool within3StdDevs = allLessThan(
                             absArray(subtractArrays(sfVec, meanMatrix[i][j])),
-                            multiplyArray(stdDevMatrix[i][j], 3)  // 3 std devs
+                            multiplyArray(stdDevMatrix[i][j], 3) // 3 std devs
                         );
+                        // TODO: Remove debug
                         if (within3StdDevs) {
                             neighborhood.push_back(sf);
                         }
@@ -259,7 +279,6 @@ void RPFIntegrator::FillSampleFilm(SamplingFilm &samplingFilm,
                             // Evaluate radiance along camera ray
                             Li(ray, scene, *tileSampler, arena, sf);
                         }
-
                         // Validate all data is not nan in sf
                         auto testvec = sf.getFullArray();
                         for (auto i = 0; i < testvec.size(); ++i) {
@@ -345,7 +364,8 @@ void RPFIntegrator::FillMeanAndStddev(const SamplingFilm &samplingFilm,
 
 void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
                                      SampleC &Alpha_k, SampleF &Beta_k,
-                                     double &W_r_c) {
+                                     double &W_r_c,
+                                     SampleC &W_r_ck) {
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 
@@ -407,15 +427,21 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+            auto mi = MutualInformation(features_data[i], random_data[j]);
+            D_r_fk[i] += mi;
+            ReportValue(mutualInformationDistribution, mi);
         }
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+            auto mi = MutualInformation(features_data[i], positions_data[j]);
+            D_p_fk[i] += mi;
+            ReportValue(mutualInformationDistribution, mi);
         }
 
         for (int j = 0; j < SD_N_COLOR; ++j) {
-            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j]);
+            auto mi = MutualInformation(features_data[i], colors_data[j]);
+            D_c_fk[i] += mi;
+            ReportValue(mutualInformationDistribution, mi);
         }
     }
 
@@ -452,38 +478,27 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     SampleF W_c_fk;
     SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        auto D_frp_sum = D_f_c + D_r_c + D_p_c;
-        if (D_frp_sum == 0) {
-            W_c_fk.at(i) = 0;
-        } else {
-            W_c_fk.at(i) = D_c_fk.at(i) / D_frp_sum;
-        }
-        auto D_rp_fk_sum = D_r_fk.at(i) + D_p_fk.at(i);
-        if (D_rp_fk_sum == 0) {
-            W_r_fk.at(i) = 0;
-        } else {
-            W_r_fk.at(i) = D_r_fk.at(i) / D_rp_fk_sum;
-        }
+        auto D_frp_sum = D_f_c + D_r_c + D_p_c + RPF_EPSILON;
+        W_c_fk.at(i) = D_c_fk.at(i) / D_frp_sum;
+
+        auto D_rp_fk_sum = D_r_fk.at(i) + D_p_fk.at(i) + RPF_EPSILON;
+        W_r_fk.at(i) = D_r_fk.at(i) / D_rp_fk_sum;
     }
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
-    SampleC W_r_ck;
+    // Already declared as reference: SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i);
-        if (D_rp_ck_sum == 0) {
-            W_r_ck.at(i) = 0;
-        } else {
-            W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
-        }
+        auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i) + RPF_EPSILON;
+        W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
     }
 
     // 4. Compute Alpha and Beta
     // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        Alpha_k[i] = 1 - W_r_ck[i];
+        Alpha_k[i] = std::max(1.0 - 2.0 * W_r_ck[i], 0.0); // 1 - W_r_ck[i];
     }
     // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
+        Beta_k[i] = std::max(1.0 - W_r_fk[i], 0.0) * W_c_fk[i];
     }
     // Compute W_r_c
     // W [r][c] = 1/3 (W [r][c,1] + W [r][c,2] + W [r][c,3])
@@ -491,7 +506,7 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_COLOR; ++i) {
         W_r_c += W_r_ck[i];
     }
-    W_r_c /= SD_N_COLOR;
+    W_r_c = W_r_c / ( (double)SD_N_COLOR );
 }
 
 void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
@@ -526,13 +541,17 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
     // box)
     double sigma_p = box_size / 4;
     // Input variance for color and f
-    double sigma_fc_seed = 0.002;
+    double sigma_fc_seed = 0.02; // 0.002;
 
     // Divide into tiles
     Point2i nTiles((sampleExtent.x + tileSize - 1) / tileSize,
                    (sampleExtent.y + tileSize - 1) / tileSize);
     ProgressReporter reporter_build_neighborhood(nTiles.x * nTiles.y,
                                                  "Applying filter");
+    
+    // Init debug visualization matrixs
+    auto W_r_ck_mat = createBasicRGBMatrix(sampleExtent.x, sampleExtent.y);
+
     {
         ParallelFor2D(
             [&](Point2i tile) {
@@ -602,7 +621,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                         continue;
                     }
                     // Get mean and stdDev for the full array
-                    std::vector<SampleX> vectors;
+                    std::vector<SampleFullArray> vectors;
                     for (const SampleData &sd : neighborhood) {
                         vectors.push_back(sd.getFullArray());
                     }
@@ -628,8 +647,22 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     SampleC Alpha_k;
                     SampleF Beta_k;
                     double W_r_c;
+                    SampleC W_r_ck;
                     ComputeCFWeights(normalized_neighborhood, Alpha_k, Beta_k,
-                                     W_r_c);
+                                     W_r_c, W_r_ck);
+                    // TODO: DEBUG remove
+                    // Scale alpha and beta by 0.001
+                    //Alpha_k = multiplyArray(Alpha_k, 0.001);
+                    //Beta_k = multiplyArray(Beta_k, 0.001);
+
+                    // Save W_r_ck to debug matrix
+                    W_r_ck_mat[pixel.x][pixel.y] =
+                        //BasicRGB(W_r_ck[0], 0, 0);
+                        BasicRGB(W_r_ck[0], W_r_ck[1], W_r_ck[2]);
+                    ReportValue(wr0ckDistribution, W_r_ck[0]);
+                    ReportValue(wr1ckDistribution, W_r_ck[1]);
+                    ReportValue(wr2ckDistribution, W_r_ck[2]);
+                    
 
                     // 4. WEIGHT THE SAMPLES
                     // Init sample weights as PxN
@@ -677,54 +710,26 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                             auto f_square_diff =
                                 squareArray(subtractArrays(fi, fj));
 
-                            // Validate FSQUARE DIFF
-                            if (std::isnan(sumArray(f_square_diff))) {
-                                // TODO: fix
-
-                                std::string msg;
-                                msg += "FSQUARE DIFF IS NAN. ";
-                                msg += "NORMED: \n";
-                                msg += "Fi Vec:\n";
-                                for (auto f : fi) {
-                                    msg += std::to_string(f) + " ";
-                                }
-                                msg += "\nFj Vec:\n";
-                                for (auto f : fj) {
-                                    msg += std::to_string(f) + " ";
-                                }
-                                msg += "\n";
-                                msg += "UNNORMED: \n";
-                                msg += "Fi Vec:\n";
-                                for (auto f : fi_unnormed) {
-                                    msg += std::to_string(f) + " ";
-                                }
-                                msg += "\nFj Vec:\n";
-                                for (auto f : fj_unnormed) {
-                                    msg += std::to_string(f) + " ";
-                                }
-                                msg += "\n";
-                                std::cout << msg;
-                                exit(1);
-                            }
-
                             // Compute sigmas
                             // sigma_f^2 = sigma_c^2 = sigma_fc_seed^2 / (1 -
                             // W_r_c)^2
                             double sigma_c_squared =
                                 (sigma_fc_seed * sigma_fc_seed) /
-                                ((1 - W_r_c) * (1 - W_r_c));
+                                ((1.0 - W_r_c) * (1.0 - W_r_c));
                             double sigma_f_squared = sigma_c_squared;
                             double sigma_p_squared = sigma_p * sigma_p;
 
                             // Calculate wij
-                            double wij = exp(-sumArray(p_square_diff) /
-                                             (2 * sigma_p_squared)) *
-                                         exp(-sumArray(multiplyArrays(
-                                                 c_square_diff, Alpha_k)) /
-                                             (2 * sigma_c_squared)) *
-                                         exp(-sumArray(multiplyArrays(
-                                                 f_square_diff, Beta_k)) /
-                                             (2 * sigma_f_squared));
+                            double p_factor = exp(-sumArray(p_square_diff) /
+                                                  (2 * sigma_p_squared));
+                            double c_factor = exp(-sumArray(multiplyArrays(
+                                                     c_square_diff, Alpha_k)) /
+                                                  (2 * sigma_c_squared));
+                            double f_factor = exp(-sumArray(multiplyArrays(
+                                                     f_square_diff, Beta_k)) /
+                                                  (2 * sigma_f_squared));
+
+                            double wij = p_factor * c_factor * f_factor;
 
                             // Save wij
                             weights_mat[i][j] = wij;
@@ -755,6 +760,21 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
 
                             // Save wij to stats
                             ReportValue(wijDistribution, wij);
+                            ReportValue(factor0Distribution, p_factor);
+                            ReportValue(factor1Distribution, c_factor);
+                            ReportValue(factor2Distribution, f_factor);
+                            // If j> sample size log
+                            if (j >= normalized_original_samples.size()) {
+                                ReportValue(nonSelfWijDistribution, wij);
+                                ReportValue(nonSelfFactor0Distribution,
+                                            p_factor);
+                                ReportValue(nonSelfFactor1Distribution,
+                                            c_factor);
+                                ReportValue(nonSelfFactor2Distribution,
+                                            f_factor);
+                            }
+
+
                         }
                     }
 
@@ -822,6 +842,21 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
     LOG(INFO) << "Filter applied";
     // Swap samplingFilm with neighborhoodFilm
     samplingFilm.samples = neighborhoodFilm.samples;
+
+
+        // Normalize debug matrix
+    {
+        // Remove any extension from filename
+        std::string base_filename = camera->film->filename;
+        std::string::size_type idx = base_filename.rfind('.');
+        if (idx != std::string::npos) {
+            base_filename = base_filename.substr(0, idx);
+        }
+        normalizeRGBMatrix(W_r_ck_mat);
+        // Base + BoxSize + _W_r_ck
+        writeRGBMatrix(W_r_ck_mat, base_filename + "_" + std::to_string(box_size) +
+                                    "_W_r_ck" + ".exr");
+    }
 }
 
 // Render
@@ -882,8 +917,7 @@ void RPFIntegrator::Render(const Scene &scene) {
 
     // Apply RPF Filter
     std::cout << "Apply RPF Filter" << std::endl;
-    std::vector<int> box_sizes = {
-        7};  //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
+    std::vector<int> box_sizes = {7};  // {7,5,3}; //{55, 35, 17, 7};
     for (int box_size : box_sizes) {
         std::cout << "Applying RPF Filter with box size " << box_size
                   << std::endl;
@@ -900,8 +934,8 @@ void RPFIntegrator::Render(const Scene &scene) {
     for (int x = 0; x < sampleExtent.x; ++x) {
         for (int y = 0; y < sampleExtent.y; ++y) {
             for (const SampleData &sf : samples[x][y]) {
-                filmTile->AddSample(sf.getPFilm(), sf.getL(),
-                                    sf.rayWeight);  // AddSplat instead?
+                filmTile->AddSample(sf.getPFilm(), sf.getL());
+                                    //sf.rayWeight);  // AddSplat instead?
 
                 // Add to stats
                 for (int i = 0; i < SD_N_COLOR; ++i) {
@@ -965,6 +999,7 @@ void RPFIntegrator::Li(const RayDifferential &r, const Scene &scene,
         if (bounces == 0) {
             sf.setN0(isect.n);
             sf.setP0(isect.p);
+
         } else if (bounces == 1) {
             sf.setN1(isect.n);
             sf.setP1(isect.p);

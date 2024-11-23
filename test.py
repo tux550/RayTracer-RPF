@@ -21,7 +21,18 @@ def are_images_identical(image_path1, image_path2):
     img2_array = np.array(img2)
     
     # Compare the arrays
-    return np.array_equal(img1_array, img2_array)
+    difference_count = 0
+    for i in range(len(img1_array)):
+        for j in range(len(img1_array[0])):
+            if not np.array_equal(img1_array[i][j], img2_array[i][j]):
+                #print(f"Pixels at ({i},{j}) are different.")
+                #print(f"Pixel 1: {img1_array[i][j]}")
+                #print(f"Pixel 2: {img2_array[i][j]}")
+                
+                difference_count += 1
+    print(f"Number of different pixels: {difference_count} out of {len(img1_array)*len(img1_array[0])}")
+    return difference_count == 0
+    #return np.array_equal(img1_array, img2_array)
 
 # Example usage
 file1 = 'output/sample.png'
