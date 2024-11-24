@@ -19,8 +19,8 @@ cmake-gen: ensure-build
 build: ensure-build
     cd build/ && make -j8
 
-run: ensure-output
-    ./build/pbrt scenes/sample.pbrt
+run scene="scenes/sample.pbrt": ensure-output
+    ./build/pbrt {{scene}}
     mv *.exr output/
     chmod a+rwx -R output
 
