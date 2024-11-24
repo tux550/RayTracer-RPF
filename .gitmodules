@@ -10,3 +10,6 @@
 [submodule "src/ext/ptex"]
 	path = src/ext/ptex
 	url = https://github.com/wdas/ptex.git
+[submodule "src/tests/rapidcheck"]
+	path = src/tests/rapidcheck
+	url = https://github.com/emil-e/rapidcheck.git

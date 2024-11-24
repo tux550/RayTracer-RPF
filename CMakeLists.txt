@@ -567,6 +567,22 @@ TARGET_LINK_LIBRARIES ( pbrt_test ${ALL_PBRT_LIBS} )
 
 ADD_TEST ( pbrt_unit_test pbrt_test )
 
+# RapidCheck
+
+FILE ( GLOB PBRT_RAPID_TEST_SOURCE
+  src/tests/generative/*.cpp
+  )
+
+ADD_EXECUTABLE ( pbrt_rapid_test ${PBRT_RAPID_TEST_SOURCE} )
+ADD_SANITIZERS ( pbrt_rapid_test )
+TARGET_COMPILE_FEATURES ( pbrt_rapid_test PRIVATE ${PBRT_CXX11_FEATURES} )
+TARGET_LINK_LIBRARIES ( pbrt_rapid_test ${ALL_PBRT_LIBS} )
+
+ADD_SUBDIRECTORY("src/tests/rapidcheck")
+TARGET_LINK_LIBRARIES(pbrt_rapid_test rapidcheck)
+
+ADD_TEST ( pbrt_gen_test pbrt_rapid_test )
+
 # Installation
 
 INSTALL ( TARGETS
