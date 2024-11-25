@@ -32,6 +32,21 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     "MinSizeRel" "RelWithDebInfo")
 endif()
 
+# Add debug settings here
+IF(CMAKE_BUILD_TYPE MATCHES Debug)
+  MESSAGE(STATUS "Setting debug compiler flags")
+  IF(MSVC)
+    SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /DEBUG")
+  ELSE()
+    # More comprehensive debug flags
+    SET(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0 -DDEBUG")
+    # Keep debug symbols in release build
+    SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -g")
+  ENDIF()
+ENDIF()
+
+SET(CMAKE_DEBUG_POSTFIX "d")
+
 if(NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/ext/openexr/OpenEXR")
   message(FATAL_ERROR "The OpenEXR submodule directory is missing! "
     "You probably did not clone the project with --recursive. It is possible to recover "
