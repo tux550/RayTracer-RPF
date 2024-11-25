@@ -26,6 +26,8 @@ STAT_INT_DISTRIBUTION("RPF/Adjusted color", adjustedColorDistribution);
 STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Color deltas", colorDeltaDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/Feature StdDev", featureStdDevDistribution);
+STAT_COUNTER("RPF/Features StdDev count", featureStdDevCount);
 
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
@@ -163,6 +165,7 @@ SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
             // If within 3 std devs, add to neighborhood
             for (size_t x = i - b_delta; x <= i + b_delta; ++x) {
                 for (size_t y = j - b_delta; y <= j + b_delta; ++y) {
+                        ++featureStdDevCount;
                     // Skip if current pixel
                     if (x == i && y == j) {
                         continue;
@@ -175,10 +178,27 @@ SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
                     for (const SampleData &sf : samples[x][y]) {
                         // Check if all features are within 3 std deviations
                         auto sfVec = sf.getFeatures();
-                        bool within3StdDevs = allLessThan(
-                            absArray(subtractArrays(sfVec, meanMatrix[i][j])),
-                            multiplyArray(stdDevMatrix[i][j], 3)  // 3 std devs
-                        );
+
+
+
+                        auto diff = absArray(subtractArrays(sfVec, meanMatrix[i][j]));
+                        // TODO: update to 3
+                        auto maxDiff = multiplyArray(stdDevMatrix[i][j], 30);  // 3 std devs
+                        bool within3StdDevs = true;
+
+                        for (size_t k = 0; k < diff.size(); ++k) {
+
+                          // If maxDiff < 0.1 or diff < 0.1, skip
+                          if (stdDevMatrix[i][j][k] < 0.1 || diff[k] < 0.1) {
+                              continue;
+                          }
+                          // Larger than max diff and either of them is larger than 0.1
+                          if (diff[k] > maxDiff[k]) {
+                              within3StdDevs = false;
+                              break;
+                          }
+                        }
+
                         if (within3StdDevs) {
                             neighborhood.push_back(sf);
                         }
@@ -480,10 +500,16 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
         Alpha_k[i] = 1 - W_r_ck[i];
+        // TODO: remove
+        // DEBUG: Set to 1 for now
+        // Alpha_k[i] = 0;
     }
     // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
+        // TODO: remove
+        // DEBUG: Set to 1 for now
+        // Beta_k[i] = 0;
     }
     // Compute W_r_c
     // W [r][c] = 1/3 (W [r][c,1] + W [r][c,2] + W [r][c,3])
@@ -578,16 +604,29 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                 // Check if all features are within 3 std
                                 // deviations
                                 auto sfVec = sf.getFeatures();
-                                bool within3StdDevs = allLessThan(
-                                    absArray(subtractArrays(
-                                        sfVec,
-                                        pixelFmeanMatrix[pixel.x][pixel.y])),
-                                    multiplyArray(
-                                        pixelFstdDevMatrix[pixel.x][pixel.y],
-                                        3)  // 3 std devs
-                                );
-                                if (within3StdDevs) {
-                                    neighborhood.push_back(sf);
+
+
+                                auto diff = absArray(subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
+                                // TODO: update to 3
+                                auto maxDiff = multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y], 3);  // 3 std devs
+                                bool within3StdDevs = true;
+
+                                for (size_t k = 0; k < diff.size(); ++k) {
+                                    // Reporte feature std dev
+
+                                    // If maxDiff < 0.1 or diff < 0.1, skip
+                                    if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 || diff[k] < 0.1) {
+                                        continue;
+                                    }
+                                    // Larger than max diff
+                                    if (diff[k] > maxDiff[k]) {
+                                        within3StdDevs = false;
+                                        break;
+                                    }
+
+                                    if (within3StdDevs) {
+                                        neighborhood.push_back(sf);
+                                    }
                                 }
                             }
                         }

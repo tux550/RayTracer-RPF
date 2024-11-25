@@ -8,7 +8,7 @@ default: build
 
 # Directories
 ensure-build:
-	mkdir -p build/
+	mkdir -p ./build/
 
 ensure-output:
 	mkdir -p output/
