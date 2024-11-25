@@ -165,7 +165,7 @@ SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
             // If within 3 std devs, add to neighborhood
             for (size_t x = i - b_delta; x <= i + b_delta; ++x) {
                 for (size_t y = j - b_delta; y <= j + b_delta; ++y) {
-                        ++featureStdDevCount;
+                    ++featureStdDevCount;
                     // Skip if current pixel
                     if (x == i && y == j) {
                         continue;
@@ -179,24 +179,24 @@ SampleDataSetMatrix RPFIntegrator::getNeighborhoodSamples(
                         // Check if all features are within 3 std deviations
                         auto sfVec = sf.getFeatures();
 
-
-
-                        auto diff = absArray(subtractArrays(sfVec, meanMatrix[i][j]));
+                        auto diff =
+                            absArray(subtractArrays(sfVec, meanMatrix[i][j]));
                         // TODO: update to 3
-                        auto maxDiff = multiplyArray(stdDevMatrix[i][j], 30);  // 3 std devs
+                        auto maxDiff = multiplyArray(stdDevMatrix[i][j],
+                                                     30);  // 3 std devs
                         bool within3StdDevs = true;
 
                         for (size_t k = 0; k < diff.size(); ++k) {
-
-                          // If maxDiff < 0.1 or diff < 0.1, skip
-                          if (stdDevMatrix[i][j][k] < 0.1 || diff[k] < 0.1) {
-                              continue;
-                          }
-                          // Larger than max diff and either of them is larger than 0.1
-                          if (diff[k] > maxDiff[k]) {
-                              within3StdDevs = false;
-                              break;
-                          }
+                            // If maxDiff < 0.1 or diff < 0.1, skip
+                            if (stdDevMatrix[i][j][k] < 0.1 || diff[k] < 0.1) {
+                                continue;
+                            }
+                            // Larger than max diff and either of them is larger
+                            // than 0.1
+                            if (diff[k] > maxDiff[k]) {
+                                within3StdDevs = false;
+                                break;
+                            }
                         }
 
                         if (within3StdDevs) {
@@ -520,7 +520,100 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     W_r_c = W_r_c / ((double)SD_N_COLOR);
 }
 
-void blend_samples(SampleDataSet &original_samples,
+auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
+                        int box_size, Bounds2i const &sampleBounds,
+                        SampleFMatrix const &pixelFmeanMatrix,
+                        SampleFMatrix const &pixelFstdDevMatrix)
+    -> std::vector<SampleData> {
+    // Init with pixel samples
+    auto neighborhood = samplingFilm.getPixelSamples(pixel);
+
+    // Get surrounding pixels
+    auto b_delta = (box_size - 1) / 2;  // Assumes box_size is odd
+
+    for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta; ++xn) {
+        for (int yn = pixel.y - b_delta; yn <= pixel.y + b_delta; ++yn) {
+            // Skip if current pixel
+            if (xn == pixel.x && yn == pixel.y) {
+                continue;
+            }
+
+            // If pixel is outside bounds, skip
+            if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x ||
+                yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
+                continue;
+            }
+
+            // Check each sample in pixel
+            for (const SampleData &sf :
+                 samplingFilm.getPixelSamples(Point2i(xn, yn))) {
+                // Check if all features are within 3 std
+                // deviations
+                auto sfVec = sf.getFeatures();
+
+                auto diff = absArray(
+                    subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
+                // TODO: update to 3
+                auto maxDiff = multiplyArray(
+                    pixelFstdDevMatrix[pixel.x][pixel.y], 3);  // 3 std devs
+                bool within3StdDevs = true;
+
+                for (size_t k = 0; k < diff.size(); ++k) {
+                    // Reporte feature std dev
+
+                    // If maxDiff < 0.1 or diff < 0.1, skip
+                    if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 ||
+                        diff[k] < 0.1) {
+                        continue;
+                    }
+
+                    // Larger than max diff
+                    if (diff[k] > maxDiff[k]) {
+                        within3StdDevs = false;
+                        break;
+                    }
+
+        // Check each sample in pixel
+        for (const SampleData &sf :
+             samplingFilm.getPixelSamples(Point2i(xn, yn))) {
+            // Check if all features are within 3 std deviations
+            auto sfVec = sf.getFeatures();
+
+            auto diff = absArray(
+                subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
+
+            // TODO: update to 3
+            auto maxDiff = multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y],
+                                         3);  // 3 std devs
+            bool within3StdDevs = true;
+
+            for (size_t k = 0; k < diff.size(); ++k) {
+                // Reporte feature std dev
+
+                // If maxDiff < 0.1 or diff < 0.1, skip
+                if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 ||
+                    diff[k] < 0.1) {
+                    continue;
+                }
+
+                // Larger than max diff
+                if (diff[k] > maxDiff[k]) {
+                    within3StdDevs = false;
+                    break;
+                }
+            }
+
+            if (within3StdDevs) {
+                neighborhood.push_back(sf);
+                sample_count += 1;
+            }
+        }
+    }
+
+    return neighborhood;
+}
+
+void blend_samples(std::vector<SampleData> &original_samples,
                    std::vector<std::vector<double>> const &weights_mat,
                    SampleDataSet const &neighborhood) {
     // c'_i,k = (sum_j in N w_ij * c_j,k) / (sum_j in N w_ij)
@@ -614,67 +707,15 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                 std::unique_ptr<SamplingTile> neighborhoodTile =
                     neighborhoodFilm.GetSamplingTile(tileBounds);
 
-                // 1. BUILD NEIGHBORHOOD
-                // Loop
-                bool debugPrint = true;
                 for (Point2i pixel : tileBounds) {
-                    // Init with pixel samples
-                    auto neighborhood = samplingFilm.getPixelSamples(pixel);
-                    auto original_samples = samplingFilm.getPixelSamples(pixel);
-                    // Get surrounding pixels
-                    auto b_delta =
-                        (box_size - 1) / 2;  // Assumes box_size is odd
-                    for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta;
-                         ++xn) {
-                        for (int yn = pixel.y - b_delta;
-                             yn <= pixel.y + b_delta; ++yn) {
-                            // Skip if current pixel
-                            if (xn == pixel.x && yn == pixel.y) {
-                                continue;
-                            }
-                            // If pixel is outside bounds, skip
-                            if (xn < sampleBounds.pMin.x ||
-                                xn >= sampleBounds.pMax.x ||
-                                yn < sampleBounds.pMin.y ||
-                                yn >= sampleBounds.pMax.y) {
-                                continue;
-                            }
-                            // Check each sample in pixel
-                            for (const SampleData &sf :
-                                 samplingFilm.getPixelSamples(
-                                     Point2i(xn, yn))) {
-                                // Check if all features are within 3 std
-                                // deviations
-                                auto sfVec = sf.getFeatures();
-
-
-                                auto diff = absArray(subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
-                                // TODO: update to 3
-                                auto maxDiff = multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y], 3);  // 3 std devs
-                                bool within3StdDevs = true;
-
-                                for (size_t k = 0; k < diff.size(); ++k) {
-                                    // Reporte feature std dev
-
-                                    // If maxDiff < 0.1 or diff < 0.1, skip
-                                    if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 || diff[k] < 0.1) {
-                                        continue;
-                                    }
-                                    // Larger than max diff
-                                    if (diff[k] > maxDiff[k]) {
-                                        within3StdDevs = false;
-                                        break;
-                                    }
-
-                                    if (within3StdDevs) {
-                                        neighborhood.push_back(sf);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // 1. BUILD NEIGHBORHOOD
+                    auto neighborhood = build_neighborhood(
+                        samplingFilm, pixel, box_size, sampleBounds,
+                        pixelFmeanMatrix, pixelFstdDevMatrix);
 
                     ReportValue(neighborhoodSize, neighborhood.size());
+
+                    auto original_samples = samplingFilm.getPixelSamples(pixel);
 
                     // 2. NORMALIZE NEIGHBORHOOD
                     if (neighborhood.size() == 0) {
