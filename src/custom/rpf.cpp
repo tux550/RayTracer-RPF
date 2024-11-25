@@ -517,7 +517,49 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_COLOR; ++i) {
         W_r_c += W_r_ck[i];
     }
-    W_r_c /= SD_N_COLOR;
+    W_r_c = W_r_c / ((double)SD_N_COLOR);
+}
+
+void blend_samples(SampleDataSet &original_samples,
+                   std::vector<std::vector<double>> const &weights_mat,
+                   SampleDataSet const &neighborhood) {
+    // c'_i,k = (sum_j in N w_ij * c_j,k) / (sum_j in N w_ij)
+    for (size_t i = 0; i < original_samples.size(); ++i) {
+        auto si = original_samples[i];
+        auto weights = weights_mat[i];
+
+        for (int k = 0; k < SD_N_COLOR; ++k) {
+            double sum_w = 0;
+            double sum_w_c = 0;
+
+            for (size_t j = 0; j < neighborhood.size(); ++j) {
+                sum_w += weights[j];
+                sum_w_c += weights[j] * neighborhood[j].getColorI(k);
+
+                // Report
+                ReportValue(inputColorDistribution,
+                            neighborhood[j].getColorI(k));
+            }
+
+            double prime_color = sum_w_c / sum_w;
+            assert(!std::isnan(prime_color));
+
+            ReportValue(adjustedColorDistribution, prime_color);
+
+            auto color_delta = prime_color - original_samples[i].getColorI(k);
+            ReportValue(colorDeltaDistribution, color_delta);
+
+            original_samples[i].setColorI(k, prime_color);
+
+            // TODO: REMOVE THIS CAPPING
+            // if (prime_color < 0) {
+            //  prime_color = 0;
+            //}
+            // if (prime_color > 300) {
+            //  prime_color = 1;
+            //}
+        }
+    }
 }
 
 void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
@@ -798,53 +840,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     }
 
                     // 5. BLEND THE SAMPLES
-                    // c'_i,k = (sum_j in N w_ij * c_j,k) / (sum_j in N w_ij)
-                    for (size_t i = 0; i < original_samples.size(); ++i) {
-                        // Get sample
-                        auto si = original_samples[i];
-                        // Get weights
-                        auto weights = weights_mat[i];
-                        for (int k = 0; k < SD_N_COLOR; ++k) {
-                            double sum_w = 0;
-                            double sum_w_c = 0;
-                            for (size_t j = 0; j < neighborhood.size(); ++j) {
-                                sum_w += weights[j];
-                                sum_w_c +=
-                                    weights[j] * neighborhood[j].getColorI(k);
-                                // Report
-                                ReportValue(inputColorDistribution,
-                                            neighborhood[j].getColorI(k));
-                            }
-                            // Reoport
-                            // ReportValue(wijSumDistribution, sum_w);
-                            // ReportValue(wijCjkSumDistribution, sum_w_c);
-                            // ReportValue(cprimeikSumDistribution,
-                            //            sum_w_c / sum_w);
-                            double prime_color = sum_w_c / sum_w;
-                            ReportValue(adjustedColorDistribution, prime_color);
-                            if (std::isnan(prime_color)) {
-                                std::cout
-                                    << "PRIME ERROR. Prime:" << prime_color
-                                    << "| Sum WC: " << sum_w_c
-                                    << " | Sum W:" << sum_w << std::endl;
-                                exit(1);
-                            }
-                            // Calc diff
-                            auto color_delta =
-                                prime_color - original_samples[i].getColorI(k);
-                            ReportValue(colorDeltaDistribution, color_delta);
-                            // Blend
-                            original_samples[i].setColorI(k, prime_color);
-
-                            // TODO: REMOVE THIS CAPPING
-                            // if (prime_color < 0) {
-                            //  prime_color = 0;
-                            //}
-                            // if (prime_color > 300) {
-                            //  prime_color = 1;
-                            //}
-                        }
-                    }
+                    blend_samples(original_samples, weights_mat, neighborhood);
 
                     // 6. SAVE BLENDED SAMPLES
                     // Add samples to neighborhoodTile
