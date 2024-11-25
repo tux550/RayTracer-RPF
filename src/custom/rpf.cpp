@@ -1,6 +1,6 @@
-
-// custom/rpf.cpp*
 #include "custom/rpf.h"
+
+#include <random>
 
 #include "bssrdf.h"
 #include "camera.h"
@@ -528,50 +528,35 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
     // Init with pixel samples
     auto neighborhood = samplingFilm.getPixelSamples(pixel);
 
-    // Get surrounding pixels
-    auto b_delta = (box_size - 1) / 2;  // Assumes box_size is odd
+    size_t start_size = neighborhood.size();
 
-    for (int xn = pixel.x - b_delta; xn <= pixel.x + b_delta; ++xn) {
-        for (int yn = pixel.y - b_delta; yn <= pixel.y + b_delta; ++yn) {
-            // Skip if current pixel
-            if (xn == pixel.x && yn == pixel.y) {
-                continue;
-            }
+    double rand_var_factor = 4;
+    double sigma_p = std::max(1.0, ((double)(box_size - 1)) / rand_var_factor);
+    // TODO: Forward this value
+    int samples_per_pixel = 8;
+    int maxNumOfSamples = (box_size * box_size * samples_per_pixel) / 3;
 
-            // If pixel is outside bounds, skip
-            if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x ||
-                yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
-                continue;
-            }
+    std::random_device rd{};
+    std::mt19937 gen{rd()};
 
-            // Check each sample in pixel
-            for (const SampleData &sf :
-                 samplingFilm.getPixelSamples(Point2i(xn, yn))) {
-                // Check if all features are within 3 std
-                // deviations
-                auto sfVec = sf.getFeatures();
+    std::normal_distribution<double> d{0, sigma_p};
 
-                auto diff = absArray(
-                    subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
-                // TODO: update to 3
-                auto maxDiff = multiplyArray(
-                    pixelFstdDevMatrix[pixel.x][pixel.y], 3);  // 3 std devs
-                bool within3StdDevs = true;
+    auto random_offset = [&d, &gen] { return std::round(d(gen)); };
 
-                for (size_t k = 0; k < diff.size(); ++k) {
-                    // Reporte feature std dev
+    for (int sample_count = 0; sample_count < maxNumOfSamples; sample_count++) {
+        int xn = pixel.x + random_offset();
+        int yn = pixel.y + random_offset();
 
-                    // If maxDiff < 0.1 or diff < 0.1, skip
-                    if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 ||
-                        diff[k] < 0.1) {
-                        continue;
-                    }
+        // Skip if current pixel
+        if (xn == pixel.x && yn == pixel.y) {
+            continue;
+        }
 
-                    // Larger than max diff
-                    if (diff[k] > maxDiff[k]) {
-                        within3StdDevs = false;
-                        break;
-                    }
+        // If pixel is outside bounds, skip
+        if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x ||
+            yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
+            continue;
+        }
 
         // Check each sample in pixel
         for (const SampleData &sf :
@@ -581,7 +566,6 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
 
             auto diff = absArray(
                 subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
-
             // TODO: update to 3
             auto maxDiff = multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y],
                                          3);  // 3 std devs
@@ -594,6 +578,17 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
                 if (pixelFmeanMatrix[pixel.x][pixel.y][k] < 0.1 ||
                     diff[k] < 0.1) {
                     continue;
+                }
+
+                // Larger than max diff
+                if (diff[k] > maxDiff[k]) {
+                    within3StdDevs = false;
+                    break;
+                }
+
+                if (within3StdDevs) {
+                    neighborhood.push_back(sf);
+                    sample_count += 1;
                 }
 
                 // Larger than max diff
