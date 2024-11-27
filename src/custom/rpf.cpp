@@ -16,6 +16,8 @@
 #include "scene.h"
 #include "stats.h"
 
+#define RPF_EPSILON 0.00000001
+
 namespace pbrt {
 STAT_COUNTER("Integrator/Camera rays traced", nCameraRays);
 STAT_INT_DISTRIBUTION("Integrator/Samples Per Pixel", samplesPerPixel);
@@ -26,6 +28,14 @@ STAT_INT_DISTRIBUTION("RPF/Adjusted color", adjustedColorDistribution);
 STAT_INT_DISTRIBUTION("RPF/Output color", outputColorDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Weights (wij)", wijDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Color deltas", colorDeltaDistribution);
+
+STAT_FLOAT_DISTRIBUTION("RPF/Alpha", alphaDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/Beta", betaDistribution);
+STAT_FLOAT_DISTRIBUTION("RPF/MI", miDistribution);
+STAT_COUNTER("RPF/Flag1", flag1);
+STAT_COUNTER("RPF/Flag2", flag2);
+STAT_COUNTER("RPF/Flag3", flag3);
+STAT_FLOAT_DISTRIBUTION("RPF/MIpart", miPartDistribution);
 
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij sum", wijSumDistribution);
 // STAT_FLOAT_DISTRIBUTION("RPF/W_ij*c_jk sum", wijCjkSumDistribution);
@@ -349,39 +359,300 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 
-    std::vector<std::vector<double>> features_data;
-    std::vector<std::vector<double>> positions_data;
-    std::vector<std::vector<double>> colors_data;
-    std::vector<std::vector<double>> random_data;
+    // std::vector<std::vector<double>> features_data;
+    // std::vector<std::vector<double>> positions_data;
+    // std::vector<std::vector<double>> colors_data;
+    // std::vector<std::vector<double>> random_data;
 
+
+    // CREATE BINS
+
+    // Sturges rule
+
+    // Features
+    // > Find min and max
+    std::array<int, SD_N_FEATURES> f_min;
+    f_min.fill(std::numeric_limits<int>::max());
+    std::array<int, SD_N_FEATURES> f_max;
+    f_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        std::vector<double> fi_samples;
         for (const SampleData &sd : neighborhood) {
-            fi_samples.push_back(sd.getFeatureI(i));
+            int val = std::round(sd.getFeatureI(i));
+            f_min[i] = std::min(f_min[i], val);
+            f_max[i] = std::max(f_max[i], val);
         }
-        features_data.push_back(fi_samples);
     }
+    std::array<int, SD_N_FEATURES> f_n_bins;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+        f_n_bins[i] = f_max[i] - f_min[i] + 1;
+    }
+    std::array<std::vector<int>, SD_N_FEATURES> features_bins;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+        features_bins[i] = std::vector<int>(f_n_bins[i], 0);
+    }
+
+    // Positions
+    // > Find min and max
+    std::array<int, SD_N_POSITION> p_min;
+    p_min.fill(std::numeric_limits<int>::max());
+    std::array<int, SD_N_POSITION> p_max;
+    p_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_POSITION; ++i) {
-        std::vector<double> pi_samples;
         for (const SampleData &sd : neighborhood) {
-            pi_samples.push_back(sd.getPositionI(i));
+            int val = std::round(sd.getPositionI(i));
+            p_min[i] = std::min(p_min[i], val);
+            p_max[i] = std::max(p_max[i], val);
         }
-        positions_data.push_back(pi_samples);
     }
+    std::array<int, SD_N_POSITION> p_n_bins;
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+        p_n_bins[i] = p_max[i] - p_min[i] + 1;
+    }
+    std::array<std::vector<int>, SD_N_POSITION> positions_bins;
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+        positions_bins[i] = std::vector<int>(p_n_bins[i], 0);
+    }
+
+
+    // Colors
+    // > Find min and max
+    std::array<int, SD_N_COLOR> c_min;
+    c_min.fill(std::numeric_limits<int>::max());
+    std::array<int, SD_N_COLOR> c_max;
+    c_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        std::vector<double> ci_samples;
         for (const SampleData &sd : neighborhood) {
-            ci_samples.push_back(sd.getColorI(i));
+            int val = std::round(sd.getColorI(i));
+            c_min[i] = std::min(c_min[i], val);
+            c_max[i] = std::max(c_max[i], val);
         }
-        colors_data.push_back(ci_samples);
     }
+    std::array<int, SD_N_COLOR> c_n_bins;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+        c_n_bins[i] = c_max[i] - c_min[i] + 1;
+    }
+    std::array<std::vector<int>, SD_N_COLOR> colors_bins;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+        colors_bins[i] = std::vector<int>(c_n_bins[i], 0);
+    }
+    
+    // Random
+    // > Find min and max
+    std::array<int, SD_N_RANDOM> r_min;
+    r_min.fill(std::numeric_limits<int>::max());
+    std::array<int, SD_N_RANDOM> r_max;
+    r_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_RANDOM; ++i) {
-        std::vector<double> ri_samples;
         for (const SampleData &sd : neighborhood) {
-            ri_samples.push_back(sd.getRandomI(i));
+            int val = std::round(sd.getRandomI(i));
+            r_min[i] = std::min(r_min[i], val);
+            r_max[i] = std::max(r_max[i], val);
         }
-        random_data.push_back(ri_samples);
     }
+    std::array<int, SD_N_RANDOM> r_n_bins;
+    for (int i = 0; i < SD_N_RANDOM; ++i) {
+        r_n_bins[i] = r_max[i] - r_min[i] + 1;
+    }
+    std::array<std::vector<int>, SD_N_RANDOM> random_bins;
+    for (int i = 0; i < SD_N_RANDOM; ++i) {
+        random_bins[i] = std::vector<int>(r_n_bins[i], 0);
+    }
+
+    // Init 2D histograms for each f-r|p|c and c-r|f|p
+
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_FEATURES>
+        ,SD_N_RANDOM> joint_hist_f_r;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+        for (int j = 0; j < SD_N_RANDOM; ++j) {
+            joint_hist_f_r[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(r_n_bins[j], 0));
+        }
+    }
+
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_FEATURES>
+        ,SD_N_POSITION> joint_hist_f_p;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+        for (int j = 0; j < SD_N_POSITION; ++j) {
+            joint_hist_f_p[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(p_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_FEATURES>
+        ,SD_N_COLOR> joint_hist_f_c;
+    for (int i = 0; i < SD_N_FEATURES; ++i) {
+        for (int j = 0; j < SD_N_COLOR; ++j) {
+            joint_hist_f_c[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(c_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_COLOR>
+        ,SD_N_RANDOM> joint_hist_c_r;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+        for (int j = 0; j < SD_N_RANDOM; ++j) {
+            joint_hist_c_r[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(r_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_COLOR>
+        ,SD_N_POSITION> joint_hist_c_p;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+        for (int j = 0; j < SD_N_POSITION; ++j) {
+            joint_hist_c_p[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(p_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_COLOR>
+        ,SD_N_FEATURES> joint_hist_c_f;
+    for (int i = 0; i < SD_N_COLOR; ++i) {
+        for (int j = 0; j < SD_N_FEATURES; ++j) {
+            joint_hist_c_f[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(f_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_POSITION>
+        ,SD_N_RANDOM> joint_hist_p_r;
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+        for (int j = 0; j < SD_N_RANDOM; ++j) {
+            joint_hist_p_r[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(r_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_POSITION>
+        ,SD_N_COLOR> joint_hist_p_c;
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+        for (int j = 0; j < SD_N_COLOR; ++j) {
+            joint_hist_p_c[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(c_n_bins[j], 0));
+        }
+    }
+    std::array<
+        std::array<
+            std::vector<std::vector<int>>,SD_N_POSITION>
+        ,SD_N_FEATURES> joint_hist_p_f;
+    for (int i = 0; i < SD_N_POSITION; ++i) {
+        for (int j = 0; j < SD_N_FEATURES; ++j) {
+            joint_hist_p_f[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(f_n_bins[j], 0));
+        }
+    }
+
+
+    // Fill histograms
+    for (const SampleData &sd : neighborhood) {
+        for (int i = 0; i < SD_N_FEATURES; ++i) {
+            int f_bin = std::round(sd.getFeatureI(i)) - f_min[i];
+            features_bins[i][f_bin]++;
+
+            // Register 2D
+            for (int j = 0; j < SD_N_RANDOM; ++j) {
+                int r_bin = std::round(sd.getRandomI(j)) - r_min[j];
+                joint_hist_f_r[j][i][f_bin][r_bin]++;
+            }
+
+            for (int j = 0; j < SD_N_POSITION; ++j) {
+                int p_bin = std::round(sd.getPositionI(j)) - p_min[j];
+                joint_hist_f_p[j][i][f_bin][p_bin]++;
+            }
+            for (int j = 0; j < SD_N_COLOR; ++j) {
+                int c_bin = std::round(sd.getColorI(j)) - c_min[j];
+                joint_hist_f_c[j][i][f_bin][c_bin]++;
+            }
+        }
+        for (int i = 0; i < SD_N_COLOR; ++i) {
+            int c_bin = std::round(sd.getColorI(i)) - c_min[i];
+            colors_bins[i][c_bin]++;
+            // Register 2D
+            for (int j = 0; j < SD_N_RANDOM; ++j) {
+                int r_bin = std::round(sd.getRandomI(j)) - r_min[j];
+                joint_hist_c_r[j][i][c_bin][r_bin]++;
+            }
+            for (int j = 0; j < SD_N_POSITION; ++j) {
+                int p_bin = std::round(sd.getPositionI(j)) - p_min[j];
+                joint_hist_c_p[j][i][c_bin][p_bin]++;
+            }
+            for (int j = 0; j < SD_N_FEATURES; ++j) {
+                int f_bin = std::round(sd.getFeatureI(j)) - f_min[j];
+                joint_hist_c_f[j][i][c_bin][f_bin]++;
+            }
+        }
+
+        for (int i = 0; i < SD_N_POSITION; ++i) {
+            int p_bin = std::round(sd.getPositionI(i)) - p_min[i];
+            positions_bins[i][p_bin]++;
+        }
+        for (int i = 0; i < SD_N_RANDOM; ++i) {
+            int r_bin = std::round(sd.getRandomI(i)) - r_min[i];
+            random_bins[i][r_bin]++;
+        }
+    }    
+
+    auto computerMutualInformation = [&](const std::vector<int>& data1, const std::vector<int>& data2, std::vector<std::vector<int>>& joint_hist) {
+        // Compute mutual information
+        double mi = 0;
+        for (int i = 0; i < data1.size(); ++i) {
+            // If no data, skip
+            if (data1[i] == 0) {
+                continue;
+            }
+            flag1++;
+            double p_x = ((double) data1[i]) / neighborhood.size(); 
+            for (int j = 0; j < data2.size(); ++j) {
+                // If no data, skip
+                if (data2[j] == 0) {
+                    continue;
+                }
+                flag2++;
+                double p_y = data2[j] / neighborhood.size();
+                // Compute joint probability
+                double p_xy = joint_hist[i][j] / neighborhood.size();
+                if (p_xy > 0) {
+                    flag3++;
+                    double log_term = std::log2(p_xy / (p_x * p_y));
+                    double mi_part = p_xy * log_term;
+                    ReportValue(miPartDistribution, mi_part);
+                    mi += mi_part;
+                }
+            }
+        }
+        ReportValue(miDistribution, mi);
+        return mi;
+    };
+    // for (int i = 0; i < SD_N_FEATURES; ++i) {
+    //     std::vector<double> fi_samples;
+    //     for (const SampleData &sd : neighborhood) {
+    //         fi_samples.push_back(sd.getFeatureI(i));
+    //     }
+    //     features_data.push_back(fi_samples);
+    // }
+
+    // for (int i = 0; i < SD_N_POSITION; ++i) {
+    //     std::vector<double> pi_samples;
+    //     for (const SampleData &sd : neighborhood) {
+    //         pi_samples.push_back(sd.getPositionI(i));
+    //     }
+    //     positions_data.push_back(pi_samples);
+    // }
+    // for (int i = 0; i < SD_N_COLOR; ++i) {
+    //     std::vector<double> ci_samples;
+    //     for (const SampleData &sd : neighborhood) {
+    //         ci_samples.push_back(sd.getColorI(i));
+    //     }
+    //     colors_data.push_back(ci_samples);
+    // }
+    // for (int i = 0; i < SD_N_RANDOM; ++i) {
+    //     std::vector<double> ri_samples;
+    //     for (const SampleData &sd : neighborhood) {
+    //         ri_samples.push_back(sd.getRandomI(i));
+    //     }
+    //     random_data.push_back(ri_samples);
+    // }
 
     // Compute mutual information
 
@@ -407,30 +678,30 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+            D_r_fk[i] += computerMutualInformation(features_bins[i], random_bins[j], joint_hist_f_r[j][i]);
         }
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+            D_p_fk[i] += computerMutualInformation(features_bins[i], positions_bins[j], joint_hist_f_p[j][i]);
         }
 
         for (int j = 0; j < SD_N_COLOR; ++j) {
-            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j]);
+            D_c_fk[i] += computerMutualInformation(features_bins[i], colors_bins[j], joint_hist_f_c[j][i]);
         }
     }
 
     for (int i = 0; i < SD_N_COLOR; ++i) {
         // For each pair color x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
+            D_r_ck[i] += computerMutualInformation(colors_bins[i], random_bins[j], joint_hist_c_r[j][i]);
         }
         // For each pair color x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
+            D_p_ck[i] += computerMutualInformation(colors_bins[i], positions_bins[j], joint_hist_c_p[j][i]);
         }
         // For each pair color x feature compute mutual information
         for (int j = 0; j < SD_N_FEATURES; ++j) {
-            D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
+            D_f_ck[i] += computerMutualInformation(colors_bins[i], features_bins[j], joint_hist_c_f[j][i]);
         }
     }
 
@@ -452,28 +723,16 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     SampleF W_c_fk;
     SampleF W_r_fk;
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        auto D_frp_sum = D_f_c + D_r_c + D_p_c;
-        if (D_frp_sum == 0) {
-            W_c_fk.at(i) = 0;
-        } else {
-            W_c_fk.at(i) = D_c_fk.at(i) / D_frp_sum;
-        }
-        auto D_rp_fk_sum = D_r_fk.at(i) + D_p_fk.at(i);
-        if (D_rp_fk_sum == 0) {
-            W_r_fk.at(i) = 0;
-        } else {
-            W_r_fk.at(i) = D_r_fk.at(i) / D_rp_fk_sum;
-        }
+        auto D_frp_sum = D_f_c + D_r_c + D_p_c + RPF_EPSILON;
+        W_c_fk.at(i) = D_c_fk.at(i) / D_frp_sum;
+        auto D_rp_fk_sum = D_r_fk.at(i) + D_p_fk.at(i) + RPF_EPSILON;
+        W_r_fk.at(i) = D_r_fk.at(i) / D_rp_fk_sum;
     }
     // W [r][c,k] = D[r][c,k] / ( D[r][c,k] + D[p][c,k] )
     SampleC W_r_ck;
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i);
-        if (D_rp_ck_sum == 0) {
-            W_r_ck.at(i) = 0;
-        } else {
-            W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
-        }
+        auto D_rp_ck_sum = D_r_ck.at(i) + D_p_ck.at(i) + RPF_EPSILON;
+        W_r_ck.at(i) = D_r_ck.at(i) / D_rp_ck_sum;
     }
 
     // 4. Compute Alpha and Beta
@@ -494,10 +753,14 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     W_r_c = W_r_c / ((double)SD_N_COLOR);
 }
 
-auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
-                        int box_size, Bounds2i const &sampleBounds,
+auto build_neighborhood(SamplingFilm const &samplingFilm,
+                        Point2i const &pixel,
+                        int box_size,
+                        Bounds2i const &sampleBounds,
                         SampleFMatrix const &pixelFmeanMatrix,
-                        SampleFMatrix const &pixelFstdDevMatrix)
+                        SampleFMatrix const &pixelFstdDevMatrix,
+                        int spp
+                        )
     -> std::vector<SampleData> {
     // Init with pixel samples
     auto neighborhood = samplingFilm.getPixelSamples(pixel);
@@ -507,52 +770,62 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
     double rand_var_factor = 4;
     double sigma_p = std::max(1.0, ((double)(box_size - 1)) / rand_var_factor);
     // TODO: Forward this value
-    int samples_per_pixel = 8;
-    int maxNumOfSamples = (box_size * box_size * samples_per_pixel) / 3;
+    int maxNumOfSamples = (box_size * box_size * std::log(spp)); //(box_size * box_size * std::log(spp));
 
     std::random_device rd{};
     std::mt19937 gen{rd()};
 
     std::normal_distribution<double> d{0, sigma_p};
+    std::uniform_int_distribution<int> index_dist{0, spp - 1};
 
     auto random_offset = [&d, &gen] { return std::round(d(gen)); };
+    auto random_index = [&index_dist, &gen] { return index_dist(gen); };
 
     for (int sample_count = 0; sample_count < maxNumOfSamples; sample_count++) {
         int xn = pixel.x + random_offset();
         int yn = pixel.y + random_offset();
+        int ind = random_index();
 
         // Skip if current pixel
         if (xn == pixel.x && yn == pixel.y) {
             continue;
         }
 
-        // If pixel is outside bounds, skip
-        if (xn < sampleBounds.pMin.x || xn >= sampleBounds.pMax.x ||
-            yn < sampleBounds.pMin.y || yn >= sampleBounds.pMax.y) {
-            continue;
+        // If pixel is outside bounds, crop
+        if (xn < sampleBounds.pMin.x) {
+            xn = sampleBounds.pMin.x;
+        } else if (xn >= sampleBounds.pMax.x) {
+            xn = sampleBounds.pMax.x - 1;
+        }
+        if (yn < sampleBounds.pMin.y) {
+            yn = sampleBounds.pMin.y;
+        } else if (yn >= sampleBounds.pMax.y) {
+            yn = sampleBounds.pMax.y - 1;
         }
 
-        // Check each sample in pixel
-        for (const SampleData &sf :
-             samplingFilm.getPixelSamples(Point2i(xn, yn))) {
-            // // Check if all features are within 3 std
-            // // deviations
-            // auto sfVec = sf.getFeatures();
-
-            // bool within3StdDevs =
-            //     allLessThan(absArray(subtractArrays(
-            //                     sfVec, pixelFmeanMatrix[pixel.x][pixel.y])),
-            //                 multiplyArray(pixelFstdDevMatrix[pixel.x][pixel.y],
-            //                               3)  // 3 std devs
-            //     );
-
-            // // neighborhood.push_back(sf);
-            // if (within3StdDevs) {
-            //     neighborhood.push_back(sf);
-            // }
-
+        // Get sample
+        auto sf = samplingFilm.getPixelSampleI(Point2i(xn, yn), ind);
+        auto sfVec = sf.getFeatures();
+        bool within3StdDevs = true;
+        auto diff = absArray(subtractArrays(sfVec, pixelFmeanMatrix[pixel.x][pixel.y]));
+        for (int f=0; f<SD_N_FEATURES; f++) {
+            // If little variance, skip
+            if (pixelFstdDevMatrix[pixel.x][pixel.y][f] <0.1) {
+                continue;
+            }
+            // If diff < 0.1, skip
+            if (diff[f] < 0.1) {
+                continue;
+            }
+            // Max diff 
+            auto max_diff = 3 * pixelFstdDevMatrix[pixel.x][pixel.y][f];
+            if (diff[f] > max_diff) {
+                within3StdDevs = false;
+                break;
+            }
+        }
+        if (within3StdDevs) {
             neighborhood.push_back(sf);
-            sample_count += 1;
         }
     }
 
@@ -657,7 +930,8 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     // 1. BUILD NEIGHBORHOOD
                     auto neighborhood = build_neighborhood(
                         samplingFilm, pixel, box_size, sampleBounds,
-                        pixelFmeanMatrix, pixelFstdDevMatrix);
+                        pixelFmeanMatrix, pixelFstdDevMatrix,
+                        sampler->samplesPerPixel);
 
                     ReportValue(neighborhoodSize, neighborhood.size());
 
@@ -698,6 +972,11 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     double W_r_c;
                     ComputeCFWeights(normalized_neighborhood, Alpha_k, Beta_k,
                                      W_r_c);
+                    // Debug alpha and beta
+                    for (int i = 0; i < SD_N_COLOR; ++i) {
+                        ReportValue(alphaDistribution, Alpha_k[i]);
+                        ReportValue(betaDistribution, Beta_k[i]);
+                    }
 
                     // 4. WEIGHT THE SAMPLES
                     // Init sample weights as PxN
@@ -785,14 +1064,20 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                             double sigma_p_squared = sigma_p * sigma_p;
 
                             // Calculate wij
-                            double wij = exp(-sumArray(p_square_diff) /
-                                             (2 * sigma_p_squared)) *
-                                         exp(-sumArray(multiplyArrays(
-                                                 c_square_diff, Alpha_k)) /
-                                             (2 * sigma_c_squared)) *
-                                         exp(-sumArray(multiplyArrays(
-                                                 f_square_diff, Beta_k)) /
-                                             (2 * sigma_f_squared));
+                            // double wij = exp(-sumArray(p_square_diff) /
+                            //                  (2 * sigma_p_squared)) *
+                            //              exp(-sumArray(multiplyArrays(
+                            //                      c_square_diff, Alpha_k)) /
+                            //                  (2 * sigma_c_squared)) *
+                            //              exp(-sumArray(multiplyArrays(
+                            //                      f_square_diff, Beta_k)) /
+                            //                  (2 * sigma_f_squared));
+                            double wij = exp(-sumArray(multiplyArrays(
+                                    c_square_diff, Alpha_k)) /
+                                (2 * sigma_c_squared)) *
+                            exp(-sumArray(multiplyArrays(
+                                    f_square_diff, Beta_k)) /
+                                (2 * sigma_f_squared));
 
                             // Save wij
                             weights_mat[i][j] = wij;

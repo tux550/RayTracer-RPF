@@ -66,4 +66,10 @@ SampleDataSet SamplingFilm::getPixelSamples(const Point2i &pixel) const {
     auto adjustedY = pixel.y - pixelBounds.pMin.y;
     return samples[adjustedX][adjustedY];
 }
+
+SampleData SamplingFilm::getPixelSampleI(const Point2i &pixel, int i) const {
+    auto adjustedX = pixel.x - pixelBounds.pMin.x;
+    auto adjustedY = pixel.y - pixelBounds.pMin.y;
+    return samples[adjustedX][adjustedY][i];
+}
 }  // namespace pbrt

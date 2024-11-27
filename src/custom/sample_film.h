@@ -42,6 +42,7 @@ struct SamplingFilm {
     int getHeight() const;
 
     SampleDataSet getPixelSamples(const Point2i &pixel) const;
+    SampleData getPixelSampleI(const Point2i &pixel, int i) const;
 };
 
 }  // namespace pbrt
