@@ -654,9 +654,10 @@ void blend_samples(std::vector<SampleData> &original_samples,
 }
 
 void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
-                                   const int tileSize,
-                                   int box_size  //= 3;
-) {
+                                   const int tileSize, int box_size) {
+
+    ProfilePhase p(Prof::RPFFilter);
+
     // Get bounds
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
     Vector2i sampleExtent = sampleBounds.Diagonal();
