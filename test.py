@@ -1,5 +1,6 @@
 # UTIL for sanity check: Compare images
 
+from re import A
 from PIL import Image
 import numpy as np
 
@@ -21,18 +22,18 @@ def are_images_identical(image_path1, image_path2):
     img2_array = np.array(img2)
     
     # Compare the arrays
-    return np.array_equal(img1_array, img2_array)
+    different_pixels = 0
+    for i in range(img1_array.shape[0]):
+        for j in range(img1_array.shape[1]):
+            for k in range(img1_array.shape[2]):
+                if img1_array[i, j, k] != img2_array[i, j, k]:
+                    different_pixels += 1
+    print(f"Number of different pixels: {different_pixels} / {img1_array.shape[0] * img1_array.shape[1]}")
+    print(f"(%: {100 * different_pixels / (img1_array.shape[0] * img1_array.shape[1])})")
 
 # Example usage
 file1 = 'output/sample.png'
 file2 = 'output/sample_unfiltered.png'
 
-print("Starting comparison...")
-try:
-  if are_images_identical(file1, file2):
-      print("The PNG files are different.")
-  else:
-      print("The PNG files are the same.")
-except Exception as e:
-  print("Error: ", e)
-print("Comparison finished.")
+
+are_images_identical(file1, file2)

@@ -68,9 +68,9 @@ class RPFIntegrator : public Integrator {
                            const int tileSize);
 
     void ComputeCFWeights(const SampleDataSet &neighborhood, SampleC &Alpha_k,
-                          SampleF &Beta_k, double &W_r_c);
+                          SampleF &Beta_k, int t, double &W_r_c);
     void ApplyRPFFilter(SamplingFilm &samplingFilm, const int tileSize,
-                        int box_size  //= 3;
+                        int box_size, int t  //= 3;
     );
 };
 

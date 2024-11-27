@@ -31,7 +31,7 @@ STAT_FLOAT_DISTRIBUTION("RPF/Color deltas", colorDeltaDistribution);
 
 STAT_FLOAT_DISTRIBUTION("RPF/Alpha", alphaDistribution);
 STAT_FLOAT_DISTRIBUTION("RPF/Beta", betaDistribution);
-STAT_FLOAT_DISTRIBUTION("RPF/MI", miDistribution);
+
 STAT_COUNTER("RPF/Flag1", flag1);
 STAT_COUNTER("RPF/Flag2", flag2);
 STAT_COUNTER("RPF/Flag3", flag3);
@@ -354,305 +354,45 @@ void RPFIntegrator::FillMeanAndStddev(const SamplingFilm &samplingFilm,
 }
 
 void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
-                                     SampleC &Alpha_k, SampleF &Beta_k,
+                                     SampleC &Alpha_k, SampleF &Beta_k, int t,
                                      double &W_r_c) {
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 
-    // std::vector<std::vector<double>> features_data;
-    // std::vector<std::vector<double>> positions_data;
-    // std::vector<std::vector<double>> colors_data;
-    // std::vector<std::vector<double>> random_data;
+    std::vector<std::vector<double>> features_data;
+    std::vector<std::vector<double>> positions_data;
+    std::vector<std::vector<double>> colors_data;
+    std::vector<std::vector<double>> random_data;
 
-
-    // CREATE BINS
-
-    // Sturges rule
-
-    // Features
-    // > Find min and max
-    std::array<int, SD_N_FEATURES> f_min;
-    f_min.fill(std::numeric_limits<int>::max());
-    std::array<int, SD_N_FEATURES> f_max;
-    f_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_FEATURES; ++i) {
+        std::vector<double> fi_samples;
         for (const SampleData &sd : neighborhood) {
-            int val = std::round(sd.getFeatureI(i));
-            f_min[i] = std::min(f_min[i], val);
-            f_max[i] = std::max(f_max[i], val);
+            fi_samples.push_back(sd.getFeatureI(i));
         }
-    }
-    std::array<int, SD_N_FEATURES> f_n_bins;
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-        f_n_bins[i] = f_max[i] - f_min[i] + 1;
-    }
-    std::array<std::vector<int>, SD_N_FEATURES> features_bins;
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-        features_bins[i] = std::vector<int>(f_n_bins[i], 0);
+        features_data.push_back(fi_samples);
     }
 
-    // Positions
-    // > Find min and max
-    std::array<int, SD_N_POSITION> p_min;
-    p_min.fill(std::numeric_limits<int>::max());
-    std::array<int, SD_N_POSITION> p_max;
-    p_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_POSITION; ++i) {
+        std::vector<double> pi_samples;
         for (const SampleData &sd : neighborhood) {
-            int val = std::round(sd.getPositionI(i));
-            p_min[i] = std::min(p_min[i], val);
-            p_max[i] = std::max(p_max[i], val);
+            pi_samples.push_back(sd.getPositionI(i));
         }
+        positions_data.push_back(pi_samples);
     }
-    std::array<int, SD_N_POSITION> p_n_bins;
-    for (int i = 0; i < SD_N_POSITION; ++i) {
-        p_n_bins[i] = p_max[i] - p_min[i] + 1;
-    }
-    std::array<std::vector<int>, SD_N_POSITION> positions_bins;
-    for (int i = 0; i < SD_N_POSITION; ++i) {
-        positions_bins[i] = std::vector<int>(p_n_bins[i], 0);
-    }
-
-
-    // Colors
-    // > Find min and max
-    std::array<int, SD_N_COLOR> c_min;
-    c_min.fill(std::numeric_limits<int>::max());
-    std::array<int, SD_N_COLOR> c_max;
-    c_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_COLOR; ++i) {
+        std::vector<double> ci_samples;
         for (const SampleData &sd : neighborhood) {
-            int val = std::round(sd.getColorI(i));
-            c_min[i] = std::min(c_min[i], val);
-            c_max[i] = std::max(c_max[i], val);
+            ci_samples.push_back(sd.getColorI(i));
         }
+        colors_data.push_back(ci_samples);
     }
-    std::array<int, SD_N_COLOR> c_n_bins;
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-        c_n_bins[i] = c_max[i] - c_min[i] + 1;
-    }
-    std::array<std::vector<int>, SD_N_COLOR> colors_bins;
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-        colors_bins[i] = std::vector<int>(c_n_bins[i], 0);
-    }
-    
-    // Random
-    // > Find min and max
-    std::array<int, SD_N_RANDOM> r_min;
-    r_min.fill(std::numeric_limits<int>::max());
-    std::array<int, SD_N_RANDOM> r_max;
-    r_max.fill(std::numeric_limits<int>::min());
     for (int i = 0; i < SD_N_RANDOM; ++i) {
+        std::vector<double> ri_samples;
         for (const SampleData &sd : neighborhood) {
-            int val = std::round(sd.getRandomI(i));
-            r_min[i] = std::min(r_min[i], val);
-            r_max[i] = std::max(r_max[i], val);
+            ri_samples.push_back(sd.getRandomI(i));
         }
+        random_data.push_back(ri_samples);
     }
-    std::array<int, SD_N_RANDOM> r_n_bins;
-    for (int i = 0; i < SD_N_RANDOM; ++i) {
-        r_n_bins[i] = r_max[i] - r_min[i] + 1;
-    }
-    std::array<std::vector<int>, SD_N_RANDOM> random_bins;
-    for (int i = 0; i < SD_N_RANDOM; ++i) {
-        random_bins[i] = std::vector<int>(r_n_bins[i], 0);
-    }
-
-    // Init 2D histograms for each f-r|p|c and c-r|f|p
-
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_FEATURES>
-        ,SD_N_RANDOM> joint_hist_f_r;
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-        for (int j = 0; j < SD_N_RANDOM; ++j) {
-            joint_hist_f_r[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(r_n_bins[j], 0));
-        }
-    }
-
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_FEATURES>
-        ,SD_N_POSITION> joint_hist_f_p;
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-        for (int j = 0; j < SD_N_POSITION; ++j) {
-            joint_hist_f_p[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(p_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_FEATURES>
-        ,SD_N_COLOR> joint_hist_f_c;
-    for (int i = 0; i < SD_N_FEATURES; ++i) {
-        for (int j = 0; j < SD_N_COLOR; ++j) {
-            joint_hist_f_c[j][i] = std::vector<std::vector<int>>(f_n_bins[i], std::vector<int>(c_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_COLOR>
-        ,SD_N_RANDOM> joint_hist_c_r;
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-        for (int j = 0; j < SD_N_RANDOM; ++j) {
-            joint_hist_c_r[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(r_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_COLOR>
-        ,SD_N_POSITION> joint_hist_c_p;
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-        for (int j = 0; j < SD_N_POSITION; ++j) {
-            joint_hist_c_p[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(p_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_COLOR>
-        ,SD_N_FEATURES> joint_hist_c_f;
-    for (int i = 0; i < SD_N_COLOR; ++i) {
-        for (int j = 0; j < SD_N_FEATURES; ++j) {
-            joint_hist_c_f[j][i] = std::vector<std::vector<int>>(c_n_bins[i], std::vector<int>(f_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_POSITION>
-        ,SD_N_RANDOM> joint_hist_p_r;
-    for (int i = 0; i < SD_N_POSITION; ++i) {
-        for (int j = 0; j < SD_N_RANDOM; ++j) {
-            joint_hist_p_r[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(r_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_POSITION>
-        ,SD_N_COLOR> joint_hist_p_c;
-    for (int i = 0; i < SD_N_POSITION; ++i) {
-        for (int j = 0; j < SD_N_COLOR; ++j) {
-            joint_hist_p_c[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(c_n_bins[j], 0));
-        }
-    }
-    std::array<
-        std::array<
-            std::vector<std::vector<int>>,SD_N_POSITION>
-        ,SD_N_FEATURES> joint_hist_p_f;
-    for (int i = 0; i < SD_N_POSITION; ++i) {
-        for (int j = 0; j < SD_N_FEATURES; ++j) {
-            joint_hist_p_f[j][i] = std::vector<std::vector<int>>(p_n_bins[i], std::vector<int>(f_n_bins[j], 0));
-        }
-    }
-
-
-    // Fill histograms
-    for (const SampleData &sd : neighborhood) {
-        for (int i = 0; i < SD_N_FEATURES; ++i) {
-            int f_bin = std::round(sd.getFeatureI(i)) - f_min[i];
-            features_bins[i][f_bin]++;
-
-            // Register 2D
-            for (int j = 0; j < SD_N_RANDOM; ++j) {
-                int r_bin = std::round(sd.getRandomI(j)) - r_min[j];
-                joint_hist_f_r[j][i][f_bin][r_bin]++;
-            }
-
-            for (int j = 0; j < SD_N_POSITION; ++j) {
-                int p_bin = std::round(sd.getPositionI(j)) - p_min[j];
-                joint_hist_f_p[j][i][f_bin][p_bin]++;
-            }
-            for (int j = 0; j < SD_N_COLOR; ++j) {
-                int c_bin = std::round(sd.getColorI(j)) - c_min[j];
-                joint_hist_f_c[j][i][f_bin][c_bin]++;
-            }
-        }
-        for (int i = 0; i < SD_N_COLOR; ++i) {
-            int c_bin = std::round(sd.getColorI(i)) - c_min[i];
-            colors_bins[i][c_bin]++;
-            // Register 2D
-            for (int j = 0; j < SD_N_RANDOM; ++j) {
-                int r_bin = std::round(sd.getRandomI(j)) - r_min[j];
-                joint_hist_c_r[j][i][c_bin][r_bin]++;
-            }
-            for (int j = 0; j < SD_N_POSITION; ++j) {
-                int p_bin = std::round(sd.getPositionI(j)) - p_min[j];
-                joint_hist_c_p[j][i][c_bin][p_bin]++;
-            }
-            for (int j = 0; j < SD_N_FEATURES; ++j) {
-                int f_bin = std::round(sd.getFeatureI(j)) - f_min[j];
-                joint_hist_c_f[j][i][c_bin][f_bin]++;
-            }
-        }
-
-        for (int i = 0; i < SD_N_POSITION; ++i) {
-            int p_bin = std::round(sd.getPositionI(i)) - p_min[i];
-            positions_bins[i][p_bin]++;
-        }
-        for (int i = 0; i < SD_N_RANDOM; ++i) {
-            int r_bin = std::round(sd.getRandomI(i)) - r_min[i];
-            random_bins[i][r_bin]++;
-        }
-    }    
-
-    auto computerMutualInformation = [&](const std::vector<int>& data1, const std::vector<int>& data2, std::vector<std::vector<int>>& joint_hist) {
-        // Compute mutual information
-        double mi = 0;
-        for (int i = 0; i < data1.size(); ++i) {
-            // If no data, skip
-            if (data1[i] == 0) {
-                continue;
-            }
-            flag1++;
-            double p_x = ((double) data1[i]) / neighborhood.size(); 
-            for (int j = 0; j < data2.size(); ++j) {
-                // If no data, skip
-                if (data2[j] == 0) {
-                    continue;
-                }
-                flag2++;
-                double p_y = data2[j] / neighborhood.size();
-                // Compute joint probability
-                double p_xy = joint_hist[i][j] / neighborhood.size();
-                if (p_xy > 0) {
-                    flag3++;
-                    double log_term = std::log2(p_xy / (p_x * p_y));
-                    double mi_part = p_xy * log_term;
-                    ReportValue(miPartDistribution, mi_part);
-                    mi += mi_part;
-                }
-            }
-        }
-        ReportValue(miDistribution, mi);
-        return mi;
-    };
-    // for (int i = 0; i < SD_N_FEATURES; ++i) {
-    //     std::vector<double> fi_samples;
-    //     for (const SampleData &sd : neighborhood) {
-    //         fi_samples.push_back(sd.getFeatureI(i));
-    //     }
-    //     features_data.push_back(fi_samples);
-    // }
-
-    // for (int i = 0; i < SD_N_POSITION; ++i) {
-    //     std::vector<double> pi_samples;
-    //     for (const SampleData &sd : neighborhood) {
-    //         pi_samples.push_back(sd.getPositionI(i));
-    //     }
-    //     positions_data.push_back(pi_samples);
-    // }
-    // for (int i = 0; i < SD_N_COLOR; ++i) {
-    //     std::vector<double> ci_samples;
-    //     for (const SampleData &sd : neighborhood) {
-    //         ci_samples.push_back(sd.getColorI(i));
-    //     }
-    //     colors_data.push_back(ci_samples);
-    // }
-    // for (int i = 0; i < SD_N_RANDOM; ++i) {
-    //     std::vector<double> ri_samples;
-    //     for (const SampleData &sd : neighborhood) {
-    //         ri_samples.push_back(sd.getRandomI(i));
-    //     }
-    //     random_data.push_back(ri_samples);
-    // }
 
     // Compute mutual information
 
@@ -678,30 +418,30 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_fk[i] += computerMutualInformation(features_bins[i], random_bins[j], joint_hist_f_r[j][i]);
+            D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
         }
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_fk[i] += computerMutualInformation(features_bins[i], positions_bins[j], joint_hist_f_p[j][i]);
+            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
         }
 
         for (int j = 0; j < SD_N_COLOR; ++j) {
-            D_c_fk[i] += computerMutualInformation(features_bins[i], colors_bins[j], joint_hist_f_c[j][i]);
+            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j]);
         }
     }
 
     for (int i = 0; i < SD_N_COLOR; ++i) {
         // For each pair color x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_ck[i] += computerMutualInformation(colors_bins[i], random_bins[j], joint_hist_c_r[j][i]);
+            D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
         }
         // For each pair color x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_ck[i] += computerMutualInformation(colors_bins[i], positions_bins[j], joint_hist_c_p[j][i]);
+            D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
         }
         // For each pair color x feature compute mutual information
         for (int j = 0; j < SD_N_FEATURES; ++j) {
-            D_f_ck[i] += computerMutualInformation(colors_bins[i], features_bins[j], joint_hist_c_f[j][i]);
+            D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
         }
     }
 
@@ -738,11 +478,12 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     // 4. Compute Alpha and Beta
     // Alpha_k = 1 - W[r][c,k]
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        Alpha_k[i] = 1 - W_r_ck[i];
+        Alpha_k[i] = std::max(1 - 2 * (1+0.1*t) * W_r_ck[i], 0.0);
     }
     // Beta_k = (1 - W[r][f,k]) * W[c][f,k]
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        Beta_k[i] = (1 - W_r_fk[i]) * W_c_fk[i];
+        // TODO: Remove this
+        Beta_k[i] = W_c_fk[i] * std::max( (1 -  (1+0.1*t) *W_r_fk[i]) , 0.0);
     }
     // Compute W_r_c
     // W [r][c] = 1/3 (W [r][c,1] + W [r][c,2] + W [r][c,3])
@@ -876,7 +617,8 @@ void blend_samples(std::vector<SampleData> &original_samples,
 
 void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                                    const int tileSize,
-                                   int box_size  //= 3;
+                                   int box_size,
+                                   int t  //= 3;
 ) {
     // Get bounds
     Bounds2i sampleBounds = camera->film->GetSampleBounds();
@@ -906,7 +648,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
     // box)
     double sigma_p = box_size / 4;
     // Input variance for color and f
-    double sigma_fc_seed = 0.002;
+    double sigma_fc_seed = 0.02;
 
     // Divide into tiles
     Point2i nTiles((sampleExtent.x + tileSize - 1) / tileSize,
@@ -970,7 +712,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     SampleC Alpha_k;
                     SampleF Beta_k;
                     double W_r_c;
-                    ComputeCFWeights(normalized_neighborhood, Alpha_k, Beta_k,
+                    ComputeCFWeights(normalized_neighborhood, Alpha_k, Beta_k, t,
                                      W_r_c);
                     // Debug alpha and beta
                     for (int i = 0; i < SD_N_COLOR; ++i) {
@@ -1191,10 +933,11 @@ void RPFIntegrator::Render(const Scene &scene) {
     std::cout << "Apply RPF Filter" << std::endl;
     std::vector<int> box_sizes = {
         7};  //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
+    int t = 0;
     for (int box_size : box_sizes) {
         std::cout << "Applying RPF Filter with box size " << box_size
                   << std::endl;
-        ApplyRPFFilter(samplingFilm, tileSize, box_size);
+        ApplyRPFFilter(samplingFilm, tileSize, box_size, t++);
     }
 
     // Render
