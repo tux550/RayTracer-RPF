@@ -898,6 +898,38 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
     samplingFilm.samples = neighborhoodFilm.samples;
 }
 
+void save_unfiltered_image(Film *film, SamplingFilm const &samplingFilm,
+                           Bounds2i const &sampleExtent) {
+    std::string original_filename = film->filename;
+
+    static std::string const unfiltered_suffix = "_unfiltered";
+
+    size_t ext_pos = film->filename.find_last_of(".");
+    if (ext_pos != std::string::npos) {
+        film->filename.insert(ext_pos, unfiltered_suffix);
+    }
+
+    // Create and fill unfiltered tile
+    std::unique_ptr<FilmTile> unfiltered_tile = film->GetFilmTile(sampleBounds);
+
+    for (int x = 0; x < sampleExtent.x; ++x) {
+        for (int y = 0; y < sampleExtent.y; ++y) {
+            for (const SampleData &sf : samplingFilm.samples[x][y]) {
+                unfiltered_tile->AddSample(sf.getPFilm(), sf.getL(),
+                                           sf.rayWeight);
+            }
+        }
+    }
+
+    film->MergeFilmTile(std::move(unfiltered_tile));
+    film->WriteImage();
+
+    // Restore original filename
+    film->filename = original_filename;
+
+    film->Clear();
+}
+
 // Render
 void RPFIntegrator::Render(const Scene &scene) {
     // Get bounds
@@ -911,38 +943,7 @@ void RPFIntegrator::Render(const Scene &scene) {
     SamplingFilm samplingFilm(sampleBounds);
     FillSampleFilm(samplingFilm, scene, tileSize);
 
-    // Save unfiltered image
-    {
-        std::string original_filename = camera->film->filename;
-
-        std::string const unfiltered_suffix = "_unfiltered";
-
-        size_t ext_pos = camera->film->filename.find_last_of(".");
-        if (ext_pos != std::string::npos) {
-            camera->film->filename.insert(ext_pos, unfiltered_suffix);
-        }
-
-        // Create and fill unfiltered tile
-        std::unique_ptr<FilmTile> unfiltered_tile =
-            camera->film->GetFilmTile(sampleBounds);
-
-        for (int x = 0; x < sampleExtent.x; ++x) {
-            for (int y = 0; y < sampleExtent.y; ++y) {
-                for (const SampleData &sf : samplingFilm.samples[x][y]) {
-                    unfiltered_tile->AddSample(sf.getPFilm(), sf.getL(),
-                                               sf.rayWeight);
-                }
-            }
-        }
-
-        camera->film->MergeFilmTile(std::move(unfiltered_tile));
-        camera->film->WriteImage();
-
-        // Restore original filename
-        camera->film->filename = original_filename;
-
-        camera->film->Clear();
-    }
+    save_unfiltered_image(this->camera->film, samplingFilm, sampleBounds);
 
     for (size_t i = 0; i < samplingFilm.samples.size(); ++i) {
         for (size_t j = 0; j < samplingFilm.samples[i].size(); ++j) {
