@@ -525,6 +525,8 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
                         SampleFMatrix const &pixelFmeanMatrix,
                         SampleFMatrix const &pixelFstdDevMatrix)
     -> std::vector<SampleData> {
+    ProfilePhase p(Prof::RPFNeighborhood);
+
     // Init with pixel samples
     auto neighborhood = samplingFilm.getPixelSamples(pixel);
 
@@ -611,6 +613,7 @@ auto build_neighborhood(SamplingFilm const &samplingFilm, Point2i const &pixel,
 void blend_samples(std::vector<SampleData> &original_samples,
                    std::vector<std::vector<double>> const &weights_mat,
                    SampleDataSet const &neighborhood) {
+    ProfilePhase p(Prof::RPFBlendSamples);
     // c'_i,k = (sum_j in N w_ij * c_j,k) / (sum_j in N w_ij)
     for (size_t i = 0; i < original_samples.size(); ++i) {
         auto si = original_samples[i];
