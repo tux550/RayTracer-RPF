@@ -426,33 +426,101 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
         D_f_ck[i] = 0;
     }
 
+    auto prob_for_vector = [&](std::vector<double> const *v)
+        -> std::tuple<std::vector<double> const *, double, double> {
+        static std::map<std::vector<double> const *,
+                        std::tuple<std::vector<double> const, double, double>>
+            cache = {};
+        // XXX: Cache could be initialized to avoid reallocations
+
+        auto it = cache.find(v);
+        if (it != cache.end()) {
+            return {std::addressof(std::get<0>(it->second)),
+                    std::get<1>(it->second), std::get<2>(it->second)};
+        }
+
+        auto pair_it = std::minmax_element(v->begin(), v->end());
+
+        double min_v = *pair_it.first;
+        double max_v = *pair_it.second;
+
+        int n_bins = 1 + static_cast<int>(std::ceil(sqrt(v->size())));
+
+        std::vector<int> hist = computeHistogram(*v, n_bins, min_v, max_v);
+
+        std::vector<double> prob(hist.size());
+
+        for (int i = 0; i < hist.size(); ++i) {
+            prob[i] = static_cast<double>(hist[i]) / v->size();
+        }
+
+        std::tuple<std::vector<double>, double, double> ret = {prob, min_v,
+                                                               max_v};
+        auto it_t = cache.emplace(v, std::move(ret));
+        assert(it_t.second == true);
+        auto cache_entry = it_t.first->second;
+
+        return {std::addressof(std::get<0>(cache_entry)),
+                std::get<1>(cache_entry), std::get<2>(cache_entry)};
+    };
+
+    auto mutual_information_with_info = [&](std::vector<double> const *x,
+                                            std::vector<double> const *y) {
+        auto x_info = prob_for_vector(x);
+        auto y_info = prob_for_vector(y);
+        x_info = prob_for_vector(x);
+
+        std::vector<double> const *x_prob = std::get<0>(x_info);
+        double x_min = std::get<1>(x_info);
+        double x_max = std::get<2>(x_info);
+
+        std::vector<double> const *y_prob = std::get<0>(y_info);
+        double y_min = std::get<1>(y_info);
+        double y_max = std::get<2>(y_info);
+
+        return MutualInformation(*x, *x_prob, x_min, x_max, *y, *y_prob, y_min,
+                                 y_max);
+    };
+
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+            D_r_fk[i] +=
+                mutual_information_with_info(std::addressof(features_data[i]),
+                                             std::addressof(random_data[j]));
         }
+
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+            D_p_fk[i] +=
+                mutual_information_with_info(std::addressof(features_data[i]),
+                                             std::addressof(positions_data[j]));
         }
 
         for (int j = 0; j < SD_N_COLOR; ++j) {
-            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j]);
+            D_c_fk[i] +=
+                mutual_information_with_info(std::addressof(features_data[i]),
+                                             std::addressof(colors_data[j]));
         }
     }
 
     for (int i = 0; i < SD_N_COLOR; ++i) {
         // For each pair color x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
+            D_r_ck[i] += mutual_information_with_info(
+                std::addressof(colors_data[i]), std::addressof(random_data[j]));
         }
         // For each pair color x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
+            D_p_ck[i] +=
+                mutual_information_with_info(std::addressof(colors_data[i]),
+                                             std::addressof(positions_data[j]));
         }
         // For each pair color x feature compute mutual information
         for (int j = 0; j < SD_N_FEATURES; ++j) {
-            D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
+            D_f_ck[i] +=
+                mutual_information_with_info(std::addressof(colors_data[i]),
+                                             std::addressof(features_data[j]));
         }
     }
 

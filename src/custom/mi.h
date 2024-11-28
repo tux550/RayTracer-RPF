@@ -15,3 +15,10 @@ std::vector<std::vector<int>> computeJointHistogram(
 double MutualInformation(const std::vector<double>& xData,
                          const std::vector<double>& yData, int binsX = -1,
                          int binsY = -1);
+
+
+double MutualInformation(std::vector<double> const& x_vec,
+                         std::vector<double> const& x_prob, double x_min,
+                         double x_max, const std::vector<double>& y_vec,
+                         std::vector<double> const& y_prob, double y_min,
+                         double y_max);

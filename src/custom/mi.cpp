@@ -109,3 +109,39 @@ double MutualInformation(const std::vector<double>& xData,
 
     return mi;
 }
+
+double MutualInformation(std::vector<double> const& x_vec,
+                         std::vector<double> const& x_prob, double x_min,
+                         double x_max, const std::vector<double>& y_vec,
+                         std::vector<double> const& y_prob, double y_min,
+                         double y_max) {
+    pbrt::ProfilePhase p(pbrt::Prof::RPFMutualInformation);
+
+    assert(!x_vec.empty());
+    assert(x_vec.size() == y_vec.size());
+
+    std::vector<std::vector<int>> jointHist = computeJointHistogram(
+        x_vec, y_vec, x_prob.size(), y_prob.size(), x_min, x_max, y_min, y_max);
+
+    double totalSamples = x_vec.size();
+
+    // Step 6: Calculate joint probabilities and mutual information
+    double mi = 0.0;
+    for (int i = 0; i < x_prob.size(); ++i) {
+        if (x_prob[i] == 0) {
+            continue;
+        }
+
+        for (int j = 0; j < y_prob.size(); ++j) {
+            double pXY = jointHist[i][j] / totalSamples;
+
+            double probXtimesY = x_prob[i] * y_prob[j];  // Division By Zero check
+
+            if (pXY > 0 && probXtimesY != 0) {
+                mi += pXY * log(pXY / probXtimesY);
+            }
+        }
+    }
+
+    return mi;
+}
