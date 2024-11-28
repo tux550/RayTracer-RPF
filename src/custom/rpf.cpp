@@ -426,17 +426,17 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
         D_f_ck[i] = 0;
     }
 
-    auto prob_for_vector = [&](std::vector<double> const *v)
-        -> std::tuple<std::vector<double> const *, double, double> {
-        static std::map<std::vector<double> const *,
-                        std::tuple<std::vector<double> const, double, double>>
-            cache = {};
-        // XXX: Cache could be initialized to avoid reallocations
+    // XXX: Cache could be initialized to avoid reallocations
+    std::map<std::vector<double> const *,
+             std::tuple<std::vector<double>, double, double>>
+        cache = {};
 
+    auto prob_for_vector = [&](std::vector<double> const *v)
+        -> std::tuple<std::vector<double>, double, double> {
         auto it = cache.find(v);
         if (it != cache.end()) {
-            return {std::addressof(std::get<0>(it->second)),
-                    std::get<1>(it->second), std::get<2>(it->second)};
+            return {std::get<0>(it->second), std::get<1>(it->second),
+                    std::get<2>(it->second)};
         }
 
         auto pair_it = std::minmax_element(v->begin(), v->end());
@@ -457,28 +457,25 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
         std::tuple<std::vector<double>, double, double> ret = {prob, min_v,
                                                                max_v};
         auto it_t = cache.emplace(v, std::move(ret));
-        assert(it_t.second == true);
+        aassert(it_t.second == true);
         auto cache_entry = it_t.first->second;
 
-        return {std::addressof(std::get<0>(cache_entry)),
-                std::get<1>(cache_entry), std::get<2>(cache_entry)};
+        return cache_entry;
     };
 
     auto mutual_information_with_info = [&](std::vector<double> const *x,
                                             std::vector<double> const *y) {
         auto x_info = prob_for_vector(x);
-        auto y_info = prob_for_vector(y);
-        x_info = prob_for_vector(x);
-
-        std::vector<double> const *x_prob = std::get<0>(x_info);
+        std::vector<double> const x_prob = std::get<0>(x_info);
         double x_min = std::get<1>(x_info);
         double x_max = std::get<2>(x_info);
 
-        std::vector<double> const *y_prob = std::get<0>(y_info);
+        auto y_info = prob_for_vector(y);
+        std::vector<double> const y_prob = std::get<0>(y_info);
         double y_min = std::get<1>(y_info);
         double y_max = std::get<2>(y_info);
 
-        return MutualInformation(*x, *x_prob, x_min, x_max, *y, *y_prob, y_min,
+        return MutualInformation(*x, x_prob, x_min, x_max, *y, y_prob, y_min,
                                  y_max);
     };
 
