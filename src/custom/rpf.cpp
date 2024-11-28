@@ -381,28 +381,28 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
         for (const SampleData &sd : neighborhood) {
             fi_samples.push_back(sd.getFeatureI(i));
         }
-        features_data.push_back(fi_samples);
+        features_data.emplace_back(std::move(fi_samples));
     }
     for (int i = 0; i < SD_N_POSITION; ++i) {
         std::vector<double> pi_samples;
         for (const SampleData &sd : neighborhood) {
             pi_samples.push_back(sd.getPositionI(i));
         }
-        positions_data.push_back(pi_samples);
+        positions_data.emplace_back(std::move(pi_samples));
     }
     for (int i = 0; i < SD_N_COLOR; ++i) {
         std::vector<double> ci_samples;
         for (const SampleData &sd : neighborhood) {
             ci_samples.push_back(sd.getColorI(i));
         }
-        colors_data.push_back(ci_samples);
+        colors_data.emplace_back(std::move(ci_samples));
     }
     for (int i = 0; i < SD_N_RANDOM; ++i) {
         std::vector<double> ri_samples;
         for (const SampleData &sd : neighborhood) {
             ri_samples.push_back(sd.getRandomI(i));
         }
-        random_data.push_back(ri_samples);
+        random_data.emplace_back(std::move(ri_samples));
     }
 
     // Compute mutual information
