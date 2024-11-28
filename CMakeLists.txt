@@ -87,7 +87,7 @@ SET_PROPERTY(GLOBAL PROPERTY USE_FOLDERS ON)
 # Annoying compiler-specific details
 
 # Common compiler flags
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated -fno-omit-frame-pointer")
 
 IF(CMAKE_COMPILER_IS_GNUCXX)
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
