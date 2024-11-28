@@ -366,6 +366,8 @@ void RPFIntegrator::FillMeanAndStddev(const SamplingFilm &samplingFilm,
 void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
                                      SampleC &Alpha_k, SampleF &Beta_k,
                                      double &W_r_c) {
+    ProfilePhase p(Prof::RPFComputeCFWeights);
+
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 

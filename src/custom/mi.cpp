@@ -2,9 +2,12 @@
 
 #include <vector>
 
+#include "core/stats.h"
 // Function to compute the histogram of a data vector
 std::vector<int> computeHistogram(const std::vector<double>& data, int bins,
                                   double minVal, double maxVal) {
+    pbrt::ProfilePhase p(pbrt::Prof::RPFHistogram);
+
     std::vector<int> hist(bins, 0);
     if (maxVal == minVal) {
         // If all data points are identical, dump all in first
@@ -25,6 +28,8 @@ std::vector<int> computeHistogram(const std::vector<double>& data, int bins,
 std::vector<std::vector<int>> computeJointHistogram(
     const std::vector<double>& xData, const std::vector<double>& yData,
     int binsX, int binsY, double minX, double maxX, double minY, double maxY) {
+    pbrt::ProfilePhase p(pbrt::Prof::RPFJointHistogram);
+
     std::vector<std::vector<int>> jointHist(binsX, std::vector<int>(binsY, 0));
 
     for (size_t i = 0; i < xData.size(); ++i) {
@@ -52,6 +57,8 @@ std::vector<std::vector<int>> computeJointHistogram(
 double MutualInformation(const std::vector<double>& xData,
                          const std::vector<double>& yData, int binsX,
                          int binsY) {
+    pbrt::ProfilePhase p(pbrt::Prof::RPFMutualInformation);
+
     // Step 1: Determine the range of the data
     double minX = *min_element(xData.begin(), xData.end());
     double maxX = *max_element(xData.begin(), xData.end());

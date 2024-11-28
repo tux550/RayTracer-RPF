@@ -188,6 +188,11 @@ enum class Prof {
     TexFiltPtex,
     RPFNeighborhood,
     RPFBlendSamples,
+    RPFFilter,
+    RPFComputeCFWeights,
+    RPFMutualInformation,
+    RPFHistogram,
+    RPFJointHistogram,
     NumProfCategories,
 };
 
@@ -245,6 +250,11 @@ static const char *ProfNames[] = {
     "Ptex lookup",
     "RPF neighborhood computation",
     "RPF blend samples",
+    "RPF filter",
+    "RPF compute CF weights",
+    "RPF mutual information",
+    "RPF Histogram",
+    "RPF Joint Histogram",
 };
 
 static_assert((int)Prof::NumProfCategories ==
