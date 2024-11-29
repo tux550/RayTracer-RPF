@@ -1,9 +1,10 @@
 #include "custom/mi.h"
 
 #include <vector>
+#include <array>
 #include "stats.h"
 
-#define MAX_NUM_OF_BINS int(10) 
+
 
 namespace pbrt {
 STAT_FLOAT_DISTRIBUTION("RPF/MI", miDistribution);
@@ -58,20 +59,20 @@ std::vector<std::vector<int>> computeJointHistogram(
 void quantizeVec(
     const std::vector<double>& data,
     std::vector<int>& quantizedData,
-    int &bins
+    int &bins,
+    int dataLength
 ) {
-    quantizedData = std::vector<int>(data.size(), 0);
     // Get min and max values + int
     int minVal = std::numeric_limits<int>::max();
     int maxVal = std::numeric_limits<int>::min();
-    for (size_t i = 0; i < data.size(); ++i) {
+    for (size_t i = 0; i < dataLength; ++i) {
         int temp = (data[i] > 0) ? (int) (data[i] + 0.5) : (int) (data[i] - 0.5);
         minVal = std::min(minVal, temp);
         maxVal = std::max(maxVal, temp);
         quantizedData[i] = temp;
     }
     // Normalize
-    for (size_t i = 0; i < data.size(); ++i) {
+    for (size_t i = 0; i < dataLength; ++i) {
         quantizedData[i] = data[i] - minVal;
     }
     // Number of bins
@@ -81,7 +82,7 @@ void quantizeVec(
     if (bins > MAX_NUM_OF_BINS) {
         float delta = float(data.size()) / float(MAX_NUM_OF_BINS - 1);
         float deltaInv = 1.0f / delta;
-        for (size_t i = 0; i < data.size(); ++i) {
+        for (size_t i = 0; i < dataLength; ++i) {
             int temp = int(quantizedData[i] * deltaInv);
             quantizedData[i] = temp;
         }
@@ -92,79 +93,93 @@ void quantizeVec(
 }
 
 
-std::vector<double> buildHistogram(
+void buildHistogram(
     const std::vector<int>& quantizedData,
+    int dataLength,
+    std::array<double, MAX_NUM_OF_BINS>& hist,
     int bins
 ) {
-    std::vector<double> hist(bins, 0);
-    for (size_t i = 0; i < quantizedData.size(); ++i) {
-        hist[quantizedData[i]]++;
+    // Init
+    hist.fill(0.0);
+
+    for (int i = 0; i < dataLength; ++i) {
+        hist.at(quantizedData.at(i))++;
     }
     // To prob
-    for (size_t i = 0; i < hist.size(); ++i) {
-        if (hist[i] == quantizedData.size()) {
-            hist[i] = 0;
+    for (size_t i = 0; i < bins; ++i) {
+        if (hist.at(i) == dataLength) {
+            hist.at(i) = 1.0;
         }
         else {
-            hist[i] /= quantizedData.size();
+            hist.at(i) /= dataLength;
         }
     }
-    return hist;
 }
 
-std::vector<std::vector<double>> buildJointHistogram(
+void buildJointHistogram(
+    std::array<std::array<double, MAX_NUM_OF_BINS>, MAX_NUM_OF_BINS>& jointHist,
     const std::vector<int>& quantizedX,
     const std::vector<int>& quantizedY,
+    int dataLength,
     int binsX,
     int binsY
 ) {
-    std::vector<std::vector<double>> jointHist(binsX, std::vector<double>(binsY, 0));
-    for (size_t i = 0; i < quantizedX.size(); ++i) {
+
+    for (size_t i = 0; i < dataLength; ++i) {
         jointHist[quantizedX[i]][quantizedY[i]]++;
     }
     // To prob
-    for (size_t i = 0; i < jointHist.size(); ++i) {
-        for (size_t j = 0; j < jointHist[i].size(); ++j) {
-            if (jointHist[i][j] == quantizedX.size()) {
-                jointHist[i][j] = 0;
+    for (size_t i = 0; i < binsX; ++i) {
+        for (size_t j = 0; j < binsY; ++j) {
+            if (jointHist[i][j] == dataLength) {
+                jointHist[i][j] = 1.0;
             }
             else {
-                jointHist[i][j] /= quantizedX.size();
+                jointHist[i][j] /= dataLength;
             }
         }
     }
-    return jointHist;
 }
 
 // Function to compute the mutual information between two continuous variables X
 // and Y
-double MutualInformation(const std::vector<double>& xData,
-                         const std::vector<double>& yData) {
+double MutualInformation(
+    const std::vector<double>& xData,
+    const std::vector<double>& yData,
+    int dataLength,
+    std::vector<int>& bufferQuantizedX,
+    std::vector<int>& bufferQuantizedY,
+    std::array<double, MAX_NUM_OF_BINS>& bufferHistX,
+    std::array<double, MAX_NUM_OF_BINS>& bufferHistY,
+    std::array<std::array<double, MAX_NUM_OF_BINS>, MAX_NUM_OF_BINS>& bufferJointHist
+) {
+    pbrt::ProfilePhase p(pbrt::Prof::RPFMutualInformation);
+
     // Quantize the data
-    std::vector<int> quantizedX, quantizedY;
     int binsX, binsY;
-    quantizeVec(xData, quantizedX, binsX);
-    quantizeVec(yData, quantizedY, binsY);
+    quantizeVec(xData, bufferQuantizedX, binsX, dataLength);
+    quantizeVec(yData, bufferQuantizedY, binsY, dataLength);
 
     // Create bins
-    std::vector<double> histX = buildHistogram(quantizedX, binsX);
-    std::vector<double> histY = buildHistogram(quantizedY, binsY);
-    std::vector<std::vector<double>> jointHist = buildJointHistogram(quantizedX, quantizedY, binsX, binsY);
+    buildHistogram(bufferQuantizedX, dataLength, bufferHistX, binsX);
+    buildHistogram(bufferQuantizedY, dataLength, bufferHistY, binsY);
+    buildJointHistogram(bufferJointHist,
+        bufferQuantizedX, bufferQuantizedY, dataLength, binsX, binsY);
 
     // Loop through x pdf
     double mi = 0.0;
-    for (size_t i = 0; i < histX.size(); ++i) {
-        if (histX[i] == 0) {
+    for (size_t i = 0; i < binsX; ++i) {
+        if (bufferHistX[i] == 0) {
             continue;
         }
-        double pX = histX[i];
+        double pX = bufferHistX[i];
         // Loop through y pdf
-        for (size_t j = 0; j < histY.size(); ++j) {
-            if (histY[j] == 0) {
+        for (size_t j = 0; j < binsY; ++j) {
+            if (bufferHistY[j] == 0) {
                 continue;
             }
-            double pY = histY[j];
-            double pXY = jointHist[i][j];
+            double pY = bufferHistY[j];
+            double pXY = bufferJointHist[i][j];
             if (pXY > 0) {
                 mi += pXY * log(pXY / (pX * pY));
             }

@@ -186,6 +186,9 @@ enum class Prof {
     TexFiltTrilerp,
     TexFiltEWA,
     TexFiltPtex,
+    RPFMutualInformation,
+    RPFBuildNeighborhood,
+    RPFComputeCFWeights,
     NumProfCategories
 };
 
@@ -241,6 +244,9 @@ static const char *ProfNames[] = {
     "MIPMap::Lookup() (trilinear)",
     "MIPMap::Lookup() (EWA)",
     "Ptex lookup",
+    "RPF::MutualInformation",
+    "RPF::BuildNeighborhood",
+    "RPF::ComputeCFWeights",
 };
 
 static_assert((int)Prof::NumProfCategories ==

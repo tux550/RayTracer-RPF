@@ -18,10 +18,29 @@
 #include "pbrt.h"
 #include "scene.h"
 #include "visualization/vis.h"
+#include "custom/mi.h"
+
 
 namespace pbrt {
 // Visualization
 void visualizeSD(const SampleDataSetMatrix &sdMat, const std::string &filename);
+
+
+struct ComputeMIBuffer {
+    // Reserve buffer for mutual information calc
+    std::vector<int> bufferQuantizedX;
+    std::array<double, MAX_NUM_OF_BINS> bufferHistX;
+    std::vector<int> bufferQuantizedY;
+    std::array<double, MAX_NUM_OF_BINS> bufferHistY;
+    std::array<std::array<double, MAX_NUM_OF_BINS>, MAX_NUM_OF_BINS> bufferJointHist;
+
+    // Constructor
+    ComputeMIBuffer(int neigborhood_size) {
+        bufferQuantizedX = std::vector<int>(neigborhood_size);
+        bufferQuantizedY = std::vector<int>(neigborhood_size);
+    }
+};
+
 
 // RPFIntegrator
 class RPFIntegrator : public Integrator {
@@ -68,7 +87,7 @@ class RPFIntegrator : public Integrator {
                            const int tileSize);
 
     void ComputeCFWeights(const SampleDataSet &neighborhood, SampleC &Alpha_k,
-                          SampleF &Beta_k, int t, double &W_r_c);
+                          SampleF &Beta_k, int t, double &W_r_c, ComputeMIBuffer &buffer);
     void ApplyRPFFilter(SamplingFilm &samplingFilm, const int tileSize,
                         int box_size, int t  //= 3;
     );

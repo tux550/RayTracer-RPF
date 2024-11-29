@@ -353,49 +353,55 @@ void RPFIntegrator::FillMeanAndStddev(const SamplingFilm &samplingFilm,
     LOG(INFO) << "Features Mean and StdDev finished";
 }
 
+
 void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
                                      SampleC &Alpha_k, SampleF &Beta_k, int t,
-                                     double &W_r_c) {
+                                     double &W_r_c, ComputeMIBuffer &buffer) {
+    ProfilePhase p(Prof::RPFComputeCFWeights);
     // 1. Aproximate joint mutual information as sum of mutual informations
     // Init data vectors
 
-    std::vector<std::vector<double>> features_data;
-    std::vector<std::vector<double>> positions_data;
-    std::vector<std::vector<double>> colors_data;
-    std::vector<std::vector<double>> random_data;
+    // Reserve space for each feature
+    const int neigborhood_size = neighborhood.size();
+
+    std::vector<std::vector<double>> features_data(SD_N_FEATURES,std::vector<double>(neigborhood_size));
+    std::vector<std::vector<double>> positions_data(SD_N_POSITION,std::vector<double>(neigborhood_size));
+    std::vector<std::vector<double>> colors_data(SD_N_COLOR,std::vector<double>(neigborhood_size));
+    std::vector<std::vector<double>> random_data(SD_N_RANDOM,std::vector<double>(neigborhood_size));
+
+    // Reserve buffer for mutual information calc
+    std::vector<int> bufferQuantizedX(neigborhood_size);
+    std::array<double, MAX_NUM_OF_BINS> bufferHistX;
+    std::vector<int> bufferQuantizedY(neigborhood_size);
+    std::array<double, MAX_NUM_OF_BINS> bufferHistY;
+    std::array<std::array<double, MAX_NUM_OF_BINS>, MAX_NUM_OF_BINS> bufferJointHist;
+
 
     for (int i = 0; i < SD_N_FEATURES; ++i) {
-        std::vector<double> fi_samples;
-        for (const SampleData &sd : neighborhood) {
-            fi_samples.push_back(sd.getFeatureI(i));
+        for (int j = 0; j < neigborhood_size; ++j) {
+            features_data[i][j] = neighborhood[j].getFeatureI(i);
         }
-        features_data.push_back(fi_samples);
     }
 
     for (int i = 0; i < SD_N_POSITION; ++i) {
-        std::vector<double> pi_samples;
-        for (const SampleData &sd : neighborhood) {
-            pi_samples.push_back(sd.getPositionI(i));
+        for (int j = 0; j < neigborhood_size; ++j) {
+            positions_data[i][j] = neighborhood[j].getPositionI(i);
         }
-        positions_data.push_back(pi_samples);
     }
+
     for (int i = 0; i < SD_N_COLOR; ++i) {
-        std::vector<double> ci_samples;
-        for (const SampleData &sd : neighborhood) {
-            ci_samples.push_back(sd.getColorI(i));
+        for (int j = 0; j < neigborhood_size; ++j) {
+            colors_data[i][j] = neighborhood[j].getColorI(i);
         }
-        colors_data.push_back(ci_samples);
     }
+
     for (int i = 0; i < SD_N_RANDOM; ++i) {
-        std::vector<double> ri_samples;
-        for (const SampleData &sd : neighborhood) {
-            ri_samples.push_back(sd.getRandomI(i));
+        for (int j = 0; j < neigborhood_size; ++j) {
+            random_data[i][j] = neighborhood[j].getRandomI(i);
         }
-        random_data.push_back(ri_samples);
     }
 
     // Compute mutual information
-
     // Init dependencies
     SampleF D_r_fk;  // D[r][f,k] = SUM_l MutualInformation(f_k, r_l)
     SampleF D_p_fk;  // D[p][f,k] = SUM_l MutualInformation(f_k, p_l)
@@ -418,30 +424,33 @@ void RPFIntegrator::ComputeCFWeights(const SampleDataSet &neighborhood,
     for (int i = 0; i < SD_N_FEATURES; ++i) {
         // For each pair feature x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_fk[i] += MutualInformation(features_data[i], random_data[j]);
+            D_r_fk[i] += MutualInformation(features_data[i], random_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
+
         // For each pair feature x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j]);
+            D_p_fk[i] += MutualInformation(features_data[i], positions_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
 
         for (int j = 0; j < SD_N_COLOR; ++j) {
-            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j]);
+            D_c_fk[i] += MutualInformation(features_data[i], colors_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
+
     }
 
+    
     for (int i = 0; i < SD_N_COLOR; ++i) {
         // For each pair color x random compute mutual information
         for (int j = 0; j < SD_N_RANDOM; ++j) {
-            D_r_ck[i] += MutualInformation(colors_data[i], random_data[j]);
+            D_r_ck[i] += MutualInformation(colors_data[i], random_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
         // For each pair color x position compute mutual information
         for (int j = 0; j < SD_N_POSITION; ++j) {
-            D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j]);
+            D_p_ck[i] += MutualInformation(colors_data[i], positions_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
         // For each pair color x feature compute mutual information
         for (int j = 0; j < SD_N_FEATURES; ++j) {
-            D_f_ck[i] += MutualInformation(colors_data[i], features_data[j]);
+            D_f_ck[i] += MutualInformation(colors_data[i], features_data[j], neigborhood_size, bufferQuantizedX, bufferQuantizedY, bufferHistX, bufferHistY, bufferJointHist);
         }
     }
 
@@ -503,6 +512,8 @@ auto build_neighborhood(SamplingFilm const &samplingFilm,
                         int spp
                         )
     -> std::vector<SampleData> {
+
+    ProfilePhase p(Prof::RPFBuildNeighborhood);
     // Init with pixel samples
     auto neighborhood = samplingFilm.getPixelSamples(pixel);
 
@@ -668,6 +679,12 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                 std::unique_ptr<SamplingTile> neighborhoodTile =
                     neighborhoodFilm.GetSamplingTile(tileBounds);
 
+                // Create compute buffer
+                int samples_scale_factor = 4;
+                int spp = sampler->samplesPerPixel;
+                int maxNumOfSamples = (box_size * box_size * spp) / samples_scale_factor;
+                ComputeMIBuffer bufferMI(maxNumOfSamples);
+
                 for (Point2i pixel : tileBounds) {
                     // 1. BUILD NEIGHBORHOOD
                     auto neighborhood = build_neighborhood(
@@ -713,7 +730,7 @@ void RPFIntegrator::ApplyRPFFilter(SamplingFilm &samplingFilm,
                     SampleF Beta_k;
                     double W_r_c;
                     ComputeCFWeights(normalized_neighborhood, Alpha_k, Beta_k, t,
-                                     W_r_c);
+                                     W_r_c, bufferMI);
                     // Debug alpha and beta
                     for (int i = 0; i < SD_N_COLOR; ++i) {
                         ReportValue(alphaDistribution, Alpha_k[i]);
@@ -931,8 +948,7 @@ void RPFIntegrator::Render(const Scene &scene) {
 
     // Apply RPF Filter
     std::cout << "Apply RPF Filter" << std::endl;
-    std::vector<int> box_sizes = {
-        7};  //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
+    std::vector<int> box_sizes = {55};  //{55, 35, 17, 7}; //{7};  // {7,5,3}; //{55, 35, 17, 7};
     int t = 0;
     for (int box_size : box_sizes) {
         std::cout << "Applying RPF Filter with box size " << box_size
